@@ -34,6 +34,17 @@ def throttle(key, maximum, seconds):
         for k in list(limits):
             if not limits[k] or limits[k][-1]<now-3600:del limits[k]
 
+@app.middleware("http")
+async def guard(request:Request,call_next):
+    if int(request.headers.get("content-length","0"))>131072:return HTMLResponse("Request too large",413)
+    body=await request.body()
+    if len(body)>131072:return HTMLResponse("Request too large",413)
+    response=await call_next(request)
+    response.headers["Cache-Control"]="no-store"
+    response.headers["X-Content-Type-Options"]="nosniff"
+    response.headers["Referrer-Policy"]="no-referrer"
+    return response
+
 async def rpc(name,body):
     url=os.environ.get("SUPABASE_URL")
     key=os.environ.get("SUPABASE_PUBLISHABLE_KEY")
