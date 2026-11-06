@@ -12,6 +12,11 @@ class APITests(unittest.TestCase):
   app.dependency_overrides[identity]=lambda:{"token":"test","account_id":"a","student_id":1,"role":"student"}
  def test_auth_required(self):
   self.assertEqual(self.c.get("/data").status_code,401)
+ def test_application_shell(self):
+  r=self.c.get("/")
+  self.assertEqual(r.status_code,200)
+  self.assertIn("Академический калькулятор",r.text)
+  self.assertIn("Режим администратора",r.text)
  def test_admin_role(self):
   self.as_student();self.assertEqual(self.c.get("/admin/tables/students").status_code,403)
  def test_manual_calculation(self):
@@ -47,4 +52,5 @@ class APITests(unittest.TestCase):
   sealed=Fernet(os.environ["AI_ENCRYPTION_KEY"].encode()).encrypt(json.dumps({"account_id":"another","actions":[]}).encode()).decode()
   self.assertEqual(self.c.post("/ai/execute",json={"confirmation_token":sealed}).status_code,403)
 if __name__=="__main__":unittest.main()
+
 

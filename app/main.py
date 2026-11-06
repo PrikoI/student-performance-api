@@ -115,6 +115,9 @@ class Delete(Strict):
 @app.get("/health")
 def health():return {"status":"ok","version":"1.0.0"}
 
+@app.get("/",response_class=HTMLResponse)
+def application_page():return Path(__file__).with_name("app.html").read_text(encoding="utf-8")
+
 @app.post("/auth/register")
 async def register(body:Registration,request:Request):
     throttle("register:"+request.client.host,5,3600)
@@ -336,4 +339,5 @@ used_plans={}
 
 @app.get("/admin",response_class=HTMLResponse)
 def admin_page():return Path(__file__).with_name("admin.html").read_text(encoding="utf-8")
+
 
