@@ -17,6 +17,7 @@ class APITests(unittest.TestCase):
   self.assertEqual(r.status_code,200)
   self.assertIn("Академический калькулятор",r.text)
   self.assertIn("Режим администратора",r.text)
+  self.assertIn("Array.isArray(raw)?raw[0]:raw",r.text)
  def test_admin_role(self):
   self.as_student();self.assertEqual(self.c.get("/admin/tables/students").status_code,403)
  def test_manual_calculation(self):
