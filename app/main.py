@@ -118,6 +118,8 @@ def health():return {"status":"ok","version":"1.0.0"}
 
 @app.get("/",response_class=HTMLResponse)
 def application_page():return Path(__file__).with_name("app.html").read_text(encoding="utf-8")
+@app.head("/")
+def application_head():return HTMLResponse("")
 
 @app.post("/auth/register")
 async def register(body:Registration,request:Request):
