@@ -18,6 +18,10 @@ class APITests(unittest.TestCase):
   self.assertIn("Академический калькулятор",r.text)
   self.assertIn("Режим администратора",r.text)
   self.assertIn("Array.isArray(raw)?raw[0]:raw",r.text)
+  self.assertIn("#4F6F8F",r.text)
+  self.assertIn("reading",r.text)
+  self.assertIn("accentPresets",r.text)
+  self.assertIn("savePreferences",r.text)
  def test_admin_role(self):
   self.as_student();self.assertEqual(self.c.get("/admin/tables/students").status_code,403)
  def test_manual_calculation(self):
