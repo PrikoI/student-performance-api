@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, ConfigDict, SecretStr
-from .academics import calculate, forecast
+from .academics import calculate, forecast, grade_points
 
 app=FastAPI(title="Student Performance API",version="1.0.0")
 @app.exception_handler(TimeoutError)
@@ -33,17 +33,6 @@ def throttle(key, maximum, seconds):
     if len(limits)>10000:
         for k in list(limits):
             if not limits[k] or limits[k][-1]<now-3600:del limits[k]
-
-@app.middleware("http")
-async def guard(request:Request,call_next):
-    if int(request.headers.get("content-length","0"))>131072:return HTMLResponse("Request too large",413)
-    body=await request.body()
-    if len(body)>131072:return HTMLResponse("Request too large",413)
-    response=await call_next(request)
-    response.headers["Cache-Control"]="no-store"
-    response.headers["X-Content-Type-Options"]="nosniff"
-    response.headers["Referrer-Policy"]="no-referrer"
-    return response
 
 async def rpc(name,body):
     url=os.environ.get("SUPABASE_URL")
@@ -91,6 +80,7 @@ class Prediction(Strict):
     level:Literal["period","year","program"]="period"
     save:bool=False
 class Calculation(Strict):
+    mode:Literal["average","gpa","course","attendance"]="average"
     calendar:Literal["semester","trimester","quarter","annual","other"]
     period_id:int|None=None
     year_id:int|None=None
@@ -121,8 +111,14 @@ def application_page():return Path(__file__).with_name("app.html").read_text(enc
 @app.post("/auth/register")
 async def register(body:Registration,request:Request):
     throttle("register:"+request.client.host,5,3600)
-    if len(body.password.get_secret_value().encode())>72:raise HTTPException(422,"Password must fit 72 UTF-8 bytes")
-    return await rpc("register_student",{"p_email":body.email,"p_password":body.password.get_secret_value(),"p_full_name":body.full_name})
+    password=body.password.get_secret_value()
+    if "@" not in body.email or "." not in body.email.rsplit("@",1)[-1]:raise HTTPException(422,"Enter a valid email address")
+    if len(password)<8:raise HTTPException(422,"Password must contain at least 8 characters")
+    if len(password.encode())>72:raise HTTPException(422,"Password must fit 72 UTF-8 bytes")
+    try:return await rpc("register_student",{"p_email":body.email.strip().lower(),"p_password":password,"p_full_name":body.full_name.strip()})
+    except HTTPException as e:
+        if e.status_code==409:raise HTTPException(409,"An account with this email already exists")
+        raise
 @app.post("/auth/login")
 async def login(body:Login,request:Request):
     throttle("login:"+request.client.host,10,60)
@@ -175,6 +171,52 @@ async def course(body:Course,me=Depends(identity)):
 async def admin_read(entity:str,q:str="",student_id:int|None=None,offset:int=0,limit:int=50,me=Depends(administrator)):
     return await rpc("api_admin_search",{"p_token":me["token"],"p_entity":entity,"p_query":q[:200],"p_student_id":student_id,"p_offset":max(0,offset),"p_limit":min(100,max(1,limit))})
 
+@app.get("/admin/analytics/comparable-gpa")
+async def comparable_gpa(calendar:str|None=None,scale_id:int|None=None,me=Depends(administrator)):
+    async def items(entity):
+        result=await rpc("api_admin_search",{"p_token":me["token"],"p_entity":entity,"p_query":"","p_student_id":None,"p_offset":0,"p_limit":100})
+        return result.get("items",[])
+    students,records,periods,settings,bands=await asyncio.gather(*[items(x) for x in ("students","academic_performance","academic_periods","academic_settings","grading_bands")])
+    setting_by_id={x["settings_id"]:x for x in settings}; period_by_id={x["period_id"]:x for x in periods}
+    eligible=[]
+    for r in records:
+        p=period_by_id.get(r.get("period_id")); s=setting_by_id.get(p.get("settings_id")) if p else None
+        if not s or r.get("current_grade") is None or r.get("credits") is None:continue
+        if calendar and s.get("calendar_type")!=calendar:continue
+        if scale_id is not None and s.get("scale_id")!=scale_id:continue
+        eligible.append((r,s))
+    groups={}
+    for r,s in eligible:
+        key=(s.get("calendar_type"),s.get("scale_id"),s.get("grade_min"),s.get("grade_max"))
+        groups.setdefault(key,[]).append(r)
+    if not groups:return {"comparable":False,"reason":"No records share the selected calendar and grading scale","groups":[]}
+    out=[]; names={x["student_id"]:x.get("full_name") for x in students}
+    for key,rs in groups.items():
+        scale_bands=[b for b in bands if b.get("scale_id")==key[1]]; by_student={}
+        for r in rs:by_student.setdefault(r["student_id"],[]).append(r)
+        members=[]
+        for sid,student_rows in by_student.items():
+            converted=[]
+            for r in student_rows:
+                gp=grade_points(float(r["current_grade"]),scale_bands) if scale_bands else None
+                if gp is not None:converted.append({"grade":gp,"credits":r["credits"]})
+            members.append({"student_id":sid,"student":names.get(sid),"gpa":round(calculate(converted)["average"],3) if converted else None,"subjects":len(student_rows)})
+        valid=[x["gpa"] for x in members if x["gpa"] is not None]
+        out.append({"calendar":key[0],"scale_id":key[1],"grade_range":[key[2],key[3]],"student_count":len(members),"average_gpa":round(sum(valid)/len(valid),3) if valid else None,"students":members})
+    return {"comparable":True,"groups":out}
+
+@app.post("/admin/assistant")
+async def admin_assistant(body:Chat,me=Depends(administrator)):
+    """Safe admin-wide command surface: no raw SQL and no credentials/private tables."""
+    text=body.message.casefold()
+    if "gpa" in text or "гпа" in text:
+        return {"kind":"comparable_gpa","result":await comparable_gpa(me=me)}
+    allowed=("students","academic_performance","academic_periods","academic_years","study_programs","predictions","courses","grading_scales","grading_bands","assessment_components","assessments","assessment_results")
+    entity=next((x for x in allowed if x.casefold() in text),None)
+    if entity:
+        return {"kind":"table","entity":entity,"result":await admin_read(entity,q="",limit=100,me=me)}
+    return {"kind":"help","text":"Ask for a permitted table by name or request comparable average GPA. Raw SQL and credential tables are intentionally unavailable.","tables":allowed}
+
 @app.post("/calculate")
 async def calculator(body:Calculation,me=Depends(identity)):
     items=body.items; bands=body.bands
@@ -208,8 +250,17 @@ async def calculator(body:Calculation,me=Depends(identity)):
         items+=body.items
         bands=bands or [b for b in data["grading_bands"] if b["scale_id"]==settings.get("scale_id")]
     try:
-        if high<=low or any(x.get("grade") is None or not low<=float(x["grade"])<=high for x in items):raise ValueError("All grades must fit the selected scale; supply missing grades through overrides")
-        return {"calendar":body.calendar,**calculate(items,bands),"saved":False}
+        if body.mode=="attendance":
+            held=sum(float(x["lessons_held"]) for x in items if x.get("lessons_held") is not None)
+            attended=sum(float(x["lessons_attended"]) for x in items if x.get("lessons_attended") is not None)
+            if held<=0 or attended<0 or attended>held:raise ValueError("Valid held and attended lesson counts are required")
+            return {"calendar":body.calendar,"mode":body.mode,"attendance":round(attended/held*100,4),"held":held,"attended":attended,"saved":False}
+        if not items:raise ValueError("Add at least one complete row")
+        if high<=low or any(x.get("grade") is None or x.get("credits") is None or float(x["credits"])<=0 or not low<=float(x["grade"])<=high for x in items):raise ValueError("Every row needs a valid grade and positive credits; empty fields are not zero")
+        result=calculate(items,bands)
+        if body.mode in ("gpa","course") and result["gpa"] is None:raise ValueError("A complete GPA scale is required")
+        if body.mode=="course" and len(items)!=1:raise ValueError("Course mode accepts exactly one discipline")
+        return {"calendar":body.calendar,"mode":body.mode,**result,"saved":False}
     except (ValueError,KeyError,TypeError) as e:raise HTTPException(422,str(e))
 
 @app.post("/predict")
