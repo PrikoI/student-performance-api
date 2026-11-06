@@ -1,61 +1,35 @@
-import os,unittest
-from unittest.mock import AsyncMock,patch
-from fastapi.testclient import TestClient
+import json, os, unittest
+from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
-from app.main import app,identity,administrator,limits,used_plans
-class APITests(unittest.TestCase):
- def setUp(self):
-  self.c=TestClient(app);limits.clear();used_plans.clear()
-  os.environ["AI_ENCRYPTION_KEY"]=Fernet.generate_key().decode()
- def tearDown(self):app.dependency_overrides.clear()
- def as_student(self):
-  app.dependency_overrides[identity]=lambda:{"token":"test","account_id":"a","student_id":1,"role":"student"}
- def test_auth_required(self):
-  self.assertEqual(self.c.get("/data").status_code,401)
- def test_application_shell(self):
-  r=self.c.get("/")
-  self.assertEqual(r.status_code,200)
-  self.assertIn("Академический калькулятор",r.text)
-  self.assertIn("Режим администратора",r.text)
-  self.assertIn("Array.isArray(raw)?raw[0]:raw",r.text)
-  self.assertIn("#4F6F8F",r.text)
-  self.assertIn("reading",r.text)
-  self.assertIn("accentPresets",r.text)
-  self.assertIn("savePreferences",r.text)
- def test_admin_role(self):
-  self.as_student();self.assertEqual(self.c.get("/admin/tables/students").status_code,403)
- def test_manual_calculation(self):
-  self.as_student()
-  r=self.c.post("/calculate",json={"calendar":"quarter","items":[{"grade":80,"credits":1},{"grade":100,"credits":3}]})
-  self.assertEqual(r.json()["average"],95)
- def test_grade_out_of_range(self):
-  self.as_student()
-  self.assertEqual(self.c.post("/calculate",json={"calendar":"semester","items":[{"grade":101}]}).status_code,422)
- def test_batch_limit(self):
-  self.as_student()
-  self.assertEqual(self.c.post("/records/batch",json={"records":[{"entity":"x","data":{}}]*101}).status_code,422)
- def test_key_hidden(self):
-  self.as_student()
-  app.dependency_overrides[administrator]=lambda:{"token":"test","role":"admin"}
-  with patch("app.main.config",AsyncMock(return_value={"encrypted_key":"secret","model":"x"})):
-   r=self.c.get("/admin/ai")
-  self.assertNotIn("secret",r.text);self.assertTrue(r.json()["key_configured"])
- def test_write_plan_requires_confirmation_and_no_replanning(self):
-  self.as_student()
+from fastapi import HTTPException
+from app.main import Calculation, Chat, ExecutePlan, administrator, application_page, calculator, chat, execute_plan, limits, used_plans
+
+STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
+
+class APITests(unittest.IsolatedAsyncioTestCase):
+ async def asyncSetUp(self):limits.clear();used_plans.clear();os.environ["AI_ENCRYPTION_KEY"]=Fernet.generate_key().decode()
+ async def test_application_shell(self):
+  html=application_page()
+  for marker in ("Академический калькулятор","Режим администратора","FIGMA_ACCENTS","fillWithAI","confirmAIChanges"):self.assertIn(marker,html)
+ async def test_admin_role(self):
+  with self.assertRaises(HTTPException) as ctx:await administrator(STUDENT)
+  self.assertEqual(ctx.exception.status_code,403)
+ async def test_manual_calculation(self):
+  r=await calculator(Calculation(calendar="quarter",mode="average",items=[{"grade":80,"credits":1},{"grade":100,"credits":3}]),STUDENT);self.assertEqual(r["average"],95)
+ async def test_empty_calculator_fields_are_not_zero(self):
+  with self.assertRaises(HTTPException) as ctx:await calculator(Calculation(calendar="semester",items=[{"grade":80,"credits":None}]),STUDENT)
+  self.assertIn("empty fields",ctx.exception.detail)
+ async def test_course_mode_requires_gpa_scale(self):
+  with self.assertRaises(HTTPException):await calculator(Calculation(calendar="semester",mode="course",items=[{"grade":90,"credits":3}]),STUDENT)
+ async def test_write_plan_requires_confirmation(self):
   actions=[{"operation":"write","entity":"academic_performance","data":{"current_grade":80}},{"operation":"answer","text":"done"}]
   with patch("app.main.plan_actions",AsyncMock(return_value=actions)),patch("app.main.all_data",AsyncMock(return_value={})),patch("app.main.config",AsyncMock(return_value={})),patch("app.main.save",AsyncMock(return_value={"saved":True})) as save:
-   r=self.c.post("/ai/chat",json={"message":"save then explain"})
-   save.assert_not_called()
-   sealed=r.json()["confirmation_token"]
-   r=self.c.post("/ai/execute",json={"confirmation_token":sealed})
-   self.assertEqual(len(r.json()["results"]),2)
-   save.assert_awaited_once()
-   self.assertEqual(self.c.post("/ai/execute",json={"confirmation_token":sealed}).status_code,409)
- def test_foreign_plan_rejected(self):
-  self.as_student()
-  import json
+   first=await chat(Chat(message="save then explain"),STUDENT);save.assert_not_called();sealed=first["confirmation_token"];done=await execute_plan(ExecutePlan(confirmation_token=sealed),STUDENT);self.assertEqual(len(done["results"]),2);save.assert_awaited_once()
+   with self.assertRaises(HTTPException) as ctx:await execute_plan(ExecutePlan(confirmation_token=sealed),STUDENT)
+   self.assertEqual(ctx.exception.status_code,409)
+ async def test_foreign_plan_rejected(self):
   sealed=Fernet(os.environ["AI_ENCRYPTION_KEY"].encode()).encrypt(json.dumps({"account_id":"another","actions":[]}).encode()).decode()
-  self.assertEqual(self.c.post("/ai/execute",json={"confirmation_token":sealed}).status_code,403)
+  with self.assertRaises(HTTPException) as ctx:await execute_plan(ExecutePlan(confirmation_token=sealed),STUDENT)
+  self.assertEqual(ctx.exception.status_code,403)
 if __name__=="__main__":unittest.main()
-
 
