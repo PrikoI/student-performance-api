@@ -23,3 +23,5 @@ Future average follows current observed weighted performance; future course comp
 No confidence interval is fabricated. No accuracy claim is made from eight synthetic profiles.
 Next method: backtest against real dated outcomes by student/course, compare persistence baseline versus regression, prevent future-data leakage, report MAE and calibration. No training across other users occurs in this version.
 
+
+When graded assessment results exist, their points/maximum are converted to the course scale and combined using the saved component weights. Unobserved components use the baseline. Total weights above 100% are rejected. Attendance and unfinished work are shown as illustrative signals rather than unsupported causal adjustments.

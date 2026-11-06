@@ -55,12 +55,28 @@ def forecast(data, period_id, level="period"):
         recent=r.get("recent_assessment_score")
         estimate=current if recent is None else .8*current+.2*float(recent)
         estimate=max(lo,min(hi,estimate))
+        components=[c for c in data.get("assessment_components",[]) if c["performance_id"]==r["performance_id"]]
+        component_estimates={}
+        for c in components:
+            assessments=[a for a in data.get("assessments",[]) if a["component_id"]==c["component_id"]]
+            results={a["assessment_id"]:a for a in data.get("assessment_results",[]) if a["status"]=="graded" and a.get("score") is not None}
+            scored=[a for a in assessments if a["assessment_id"] in results]
+            if scored:
+                fraction=sum(float(results[a["assessment_id"]]["score"]) for a in scored)/sum(float(a["maximum_score"]) for a in scored)
+                component_estimates[c["component_id"]]=max(lo,min(hi,lo+(hi-lo)*fraction))
+        if components:
+            total_weight=sum(float(c["weight_percent"]) for c in components)
+            if total_weight>100.00001:raise ValueError("Assessment weights exceed 100 percent")
+            estimate=(sum(float(c["weight_percent"])*component_estimates.get(c["component_id"],estimate) for c in components)+(100-total_weight)*estimate)/100
         exam=[]
         for c in data.get("assessment_components",[]):
             if c["performance_id"]==r["performance_id"] and c["component_type"] in ("midterm","final"):
-                exam.append({"component_id":c["component_id"],"name":c["name"],"estimated_grade":round(estimate,2),
+                exam.append({"component_id":c["component_id"],"name":c["name"],"estimated_grade":round(component_estimates.get(c["component_id"],estimate),2),
                              "note":"Same baseline on course scale; not an independently validated exam model"})
-        estimates.append({"performance_id":r["performance_id"],"course_id":r["course_id"],"grade":estimate,
+        signals=[]
+        if r.get("attendance") is not None and float(r["attendance"])<75:signals.append("Attendance below illustrative 75% threshold")
+        if r.get("assignments_total") and (r.get("assignments_completed") or 0)<r["assignments_total"]:signals.append("There are unfinished assignments")
+        estimates.append({"performance_id":r["performance_id"],"course_id":r["course_id"],"grade":estimate,"signals":signals,
                           "credits":r.get("credits"),"current_grade":current,"exams":exam})
     if not estimates: raise ValueError("Numeric current grades required")
     if any(x["credits"] is None for x in estimates):

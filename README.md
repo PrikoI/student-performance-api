@@ -31,7 +31,7 @@ POST /records/batch: {records:[{entity,data},...]}, <=100 records, atomic.
 Create parent records first and use returned IDs. Batch data cannot reference not-yet-generated IDs.
 Supported writable entities: study_programs, academic_years, academic_periods, academic_settings, academic_performance, lesson_attendance, assessment_components, assessments, assessment_results, actual_results, notifications, academic_import_drafts, grading_scales.
 Historical academic settings used by a period remain immutable: insert a new version.
-Grading bands and profile/preferences retain their existing schema but do not yet have new simple-session write endpoints.
+POST /tables/students edits full_name/group_name; POST /tables/user_preferences edits language/display_mode/accent_color. GET /preferences reads preferences. POST /tables/grading_bands creates/updates an owned scale band; PATCH /tables/courses/{id} renames a personally owned course. Shared seed courses cannot be renamed.
 Predictions are written using /predict with save=true, not generic record updates.
 
 ## Demonstration administration

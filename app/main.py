@@ -12,13 +12,16 @@ from pathlib import Path
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import FastAPI, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, ConfigDict, SecretStr
 from .academics import calculate, forecast
 
 app=FastAPI(title="Student Performance API",version="1.0.0")
+@app.exception_handler(TimeoutError)
+async def deadline_exceeded(request,exc):
+    return JSONResponse({"detail":"Request deadline exceeded; inspect saved data before retrying writes"},status_code=504)
 app.add_middleware(CORSMiddleware,allow_origins=os.getenv("CORS_ORIGINS","https://rapid-slogan-47893425.figma.site,http://localhost:3000").split(","),allow_methods=["GET","POST","PUT","PATCH","DELETE"],allow_headers=["Authorization","Content-Type"],allow_credentials=False)
 security=HTTPBearer(auto_error=False)
 limits=defaultdict(deque)
@@ -130,6 +133,9 @@ async def profile(me=Depends(identity)):return {k:v for k,v in me.items() if k!=
 @app.get("/data")
 async def all_data(me=Depends(identity)):return await rpc("get_student_data",{"p_session_token":me["token"]})
 
+@app.get("/preferences")
+async def preferences(me=Depends(identity)):return await rpc("api_preferences",{"p_token":me["token"]})
+
 @app.get("/tables/{entity}")
 async def read_table(entity:str,q:str="",period_id:int|None=None,offset:int=0,limit:int=50,me=Depends(identity)):
     data=await all_data(me)
@@ -140,9 +146,17 @@ async def read_table(entity:str,q:str="",period_id:int|None=None,offset:int=0,li
     return {"total":len(rows),"items":rows[max(0,offset):max(0,offset)+min(100,max(1,limit))]}
 @app.post("/tables/{entity}")
 async def save(entity:str,body:Record,me=Depends(identity)):
+    if entity in ("students","user_preferences","grading_bands","courses"):
+        return await rpc("api_save_extra",{"p_token":me["token"],"p_entity":entity,"p_data":body.data})
     return await rpc("save_student_record",{"p_session_token":me["token"],"p_entity":entity,"p_data":body.data})
 @app.patch("/tables/{entity}/{record_id}")
 async def update(entity:str,record_id:int,body:Record,me=Depends(identity)):
+    if entity in ("grading_bands","courses"):
+        pk="band_id" if entity=="grading_bands" else "course_id"
+        return await save(entity,Record(data={**body.data,pk:record_id}),me)
+    if entity=="students":
+        if record_id!=me["student_id"]:raise HTTPException(404,"Student not found")
+        return await save(entity,body,me)
     return await rpc("api_update",{"p_token":me["token"],"p_entity":entity,"p_id":record_id,"p_data":body.data})
 @app.delete("/tables/{entity}/{record_id}")
 async def delete(entity:str,record_id:int,confirm:bool=False,me=Depends(identity)):
@@ -276,6 +290,7 @@ async def execute_actions(actions,me,confirmed):
         if not confirmed and any(a.get("operation")=="write" for a in actions):
             first=next(i for i,a in enumerate(actions) if a.get("operation")=="write")
             prefix=await execute_actions(actions[:first],me,True) if first else {"results":[]}
+            if any(r["status"]=="failed" for r in prefix["results"]):return prefix
             pending=actions[first:]
             sealed=cipher().encrypt(json.dumps({"account_id":me["account_id"],"actions":pending}).encode()).decode()
             return {"results":prefix["results"],"status":"confirmation_required","proposed_actions":pending,"confirmation_token":sealed}
@@ -314,7 +329,8 @@ async def execute_plan(body:ExecutePlan,me=Depends(identity)):
     used_plans[digest]=time.monotonic()
     for key,created in list(used_plans.items()):
         if created<time.monotonic()-600:del used_plans[key]
-    return await execute_actions(plan["actions"],me,True)
+    async with asyncio.timeout(90):
+        return await execute_actions(plan["actions"],me,True)
 
 used_plans={}
 
