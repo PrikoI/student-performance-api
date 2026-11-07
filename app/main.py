@@ -198,24 +198,31 @@ async def comparable_gpa(calendar:str|None=None,scale_id:int|None=None,me=Depend
         if calendar and s.get("calendar_type")!=calendar:continue
         if scale_id is not None and s.get("scale_id")!=scale_id:continue
         eligible.append((r,s))
+    bands_by_scale={}
+    for band in bands:bands_by_scale.setdefault(band.get("scale_id"),[]).append(band)
+    def scale_signature(settings):
+        scale_bands=bands_by_scale.get(settings.get("scale_id"),[])
+        normalized=sorted((json.dumps(x.get("score_range"),sort_keys=True),str(x.get("letter_grade") or ""),str(x.get("grade_points"))) for x in scale_bands)
+        return json.dumps(normalized,separators=(",",":"))
     groups={}
     for r,s in eligible:
-        key=(s.get("calendar_type"),s.get("scale_id"),s.get("grade_min"),s.get("grade_max"))
-        groups.setdefault(key,[]).append(r)
+        key=(s.get("calendar_type"),s.get("grading_scale"),str(s.get("grade_min")),str(s.get("grade_max")),s.get("credit_system"),scale_signature(s))
+        groups.setdefault(key,[]).append((r,s))
     if not groups:return {"comparable":False,"reason":"No records share the selected calendar and grading scale","groups":[]}
     out=[]; names={x["student_id"]:x.get("full_name") for x in students}
-    for key,rs in groups.items():
-        scale_bands=[b for b in bands if b.get("scale_id")==key[1]]; by_student={}
-        for r in rs:by_student.setdefault(r["student_id"],[]).append(r)
+    for key,entries in groups.items():
+        by_student={}
+        for r,s in entries:by_student.setdefault(r["student_id"],[]).append((r,s))
         members=[]
-        for sid,student_rows in by_student.items():
+        for sid,student_entries in by_student.items():
             converted=[]
-            for r in student_rows:
+            for r,s in student_entries:
+                scale_bands=bands_by_scale.get(s.get("scale_id"),[])
                 gp=grade_points(float(r["current_grade"]),scale_bands) if scale_bands else None
                 if gp is not None:converted.append({"grade":gp,"credits":r["credits"]})
-            members.append({"student_id":sid,"student":names.get(sid),"gpa":round(calculate(converted)["average"],3) if converted else None,"subjects":len(student_rows)})
+            members.append({"student_id":sid,"student":names.get(sid),"gpa":round(calculate(converted)["average"],3) if converted else None,"subjects":len(student_entries)})
         valid=[x["gpa"] for x in members if x["gpa"] is not None]
-        out.append({"calendar":key[0],"scale_id":key[1],"grade_range":[key[2],key[3]],"student_count":len(members),"average_gpa":round(sum(valid)/len(valid),3) if valid else None,"students":members})
+        out.append({"calendar":key[0],"scale_name":f"{key[1]} {key[2]}–{key[3]}","grade_range":[key[2],key[3]],"student_count":len(members),"average_gpa":round(sum(valid)/len(valid),3) if valid else None,"students":members})
     return {"comparable":True,"groups":out}
 
 @app.post("/admin/assistant")
