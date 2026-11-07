@@ -317,6 +317,28 @@ async def put_ai(body:AISettings,me=Depends(administrator)):
     saved=await rpc("api_ai_config",{"p_token":me["token"],"p_config":{"base_url":body.base_url.rstrip("/"),"model":body.model,"enabled":body.enabled,"encrypted_key":encrypted}})
     return public_config(saved)
 
+def parse_ai_plan(payload):
+    message=payload.get("choices",[{}])[0].get("message",{})
+    raw=message.get("content")
+    if isinstance(raw,list):raw="".join(x.get("text","") for x in raw if isinstance(x,dict))
+    if not isinstance(raw,str) or not raw.strip():raise ValueError("empty model response")
+    raw=raw.strip()
+    if raw.startswith("```"):
+        raw=raw.split("\n",1)[1] if "\n" in raw else raw[3:]
+        raw=raw.rsplit("```",1)[0].strip()
+    try:return json.loads(raw)
+    except json.JSONDecodeError:
+        start,end=raw.find("{"),raw.rfind("}")
+        if start>=0 and end>start:return json.loads(raw[start:end+1])
+        raise
+
+def safe_provider_error(response):
+    try:
+        body=response.json();detail=body.get("error",body.get("detail",body))
+        if isinstance(detail,dict):detail=detail.get("message") or detail.get("code") or "request rejected"
+        return str(detail)[:240]
+    except Exception:return (response.text or "request rejected")[:240]
+
 async def plan_actions(message,data,c):
     if not c or not c.get("enabled") or not c.get("encrypted_key"):raise HTTPException(503,"AI is not configured")
     validate_provider(c["base_url"])
@@ -340,14 +362,20 @@ If more than five actions are needed, return {"actions":[],"error":"too_many_act
 Writes require user confirmation in the application.'''
     try:
         async with httpx.AsyncClient(timeout=40,follow_redirects=False) as client:
-            r=await client.post(c["base_url"]+"/chat/completions",headers={"Authorization":"Bearer "+key},
-                json={"model":c["model"],"messages":[{"role":"system","content":prompt},
-                {"role":"user","content":json.dumps({"request":message,"academic_records":json.loads(context_text)},ensure_ascii=False)}],"max_tokens":2500})
+            headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"}
+            if urlparse(c["base_url"]).hostname=="openrouter.ai":headers|={"HTTP-Referer":"https://student-performance-api-ee1k.onrender.com","X-Title":"Student Performance"}
+            request_body={"model":c["model"],"messages":[{"role":"system","content":prompt},
+                {"role":"user","content":json.dumps({"request":message,"academic_records":json.loads(context_text)},ensure_ascii=False)}],
+                "max_tokens":2500,"temperature":0,"response_format":{"type":"json_object"}}
+            r=await client.post(c["base_url"]+"/chat/completions",headers=headers,json=request_body)
+            if r.status_code in (400,422) and "response_format" in safe_provider_error(r).casefold():
+                request_body.pop("response_format",None)
+                r=await client.post(c["base_url"]+"/chat/completions",headers=headers,json=request_body)
             r.raise_for_status()
-            raw=r.json()["choices"][0]["message"]["content"].strip()
-            if raw.startswith("```"):raw=raw.split("\n",1)[1].rsplit("```",1)[0]
-            plan=json.loads(raw)
-    except (httpx.HTTPError,KeyError,ValueError,TypeError):raise HTTPException(502,"AI provider failed or returned invalid JSON")
+            plan=parse_ai_plan(r.json())
+    except httpx.HTTPStatusError as e:raise HTTPException(502,f"AI provider returned {e.response.status_code}: {safe_provider_error(e.response)}")
+    except httpx.HTTPError as e:raise HTTPException(502,f"Could not reach AI provider: {type(e).__name__}")
+    except (KeyError,ValueError,TypeError,json.JSONDecodeError):raise HTTPException(502,"AI returned an invalid action plan. Choose a model with JSON output support or retry.")
     actions=plan.get("actions")
     if not isinstance(actions,list) or not 1<=len(actions)<=5:raise HTTPException(422,"AI plan must contain 1–5 actions")
     return actions
