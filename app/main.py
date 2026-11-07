@@ -162,15 +162,28 @@ def auth_secret():
     if not value:raise HTTPException(503,"Registration service is not configured")
     return value
 
-async def send_auth_email(email,code,purpose):
+async def send_resend_email(email,subject,html,idempotency_key):
     key=os.getenv("RESEND_API_KEY")
     if not key:raise HTTPException(503,"Email delivery is not configured yet. Add RESEND_API_KEY in Render.")
+    headers={"Authorization":"Bearer "+key,"Content-Type":"application/json","Idempotency-Key":str(idempotency_key)[:256]}
+    payload={"from":os.getenv("MAIL_FROM","Perfecta <onboarding@resend.dev>"),"to":[email],"subject":subject,"html":html}
+    async with httpx.AsyncClient(timeout=20,follow_redirects=False) as client:
+        for attempt in range(3):
+            try:response=await client.post("https://api.resend.com/emails",headers=headers,json=payload)
+            except (httpx.TimeoutException,httpx.NetworkError):
+                if attempt==2:raise HTTPException(502,"Почтовый сервис временно недоступен")
+                await asyncio.sleep(2**attempt);continue
+            if not response.is_error:return response.json().get("id")
+            if response.status_code not in (429,500,502,503,504) or attempt==2:break
+            retry_after=response.headers.get("retry-after")
+            await asyncio.sleep(min(10,float(retry_after)) if retry_after and retry_after.replace(".","",1).isdigit() else 2**attempt)
+    raise HTTPException(502,"Не удалось отправить письмо. Проверьте настройки Resend и адрес отправителя.")
+
+async def send_auth_email(email,code,purpose,challenge_id):
     title="Подтверждение регистрации" if purpose=="registration" else "Сброс пароля"
     action="завершения регистрации" if purpose=="registration" else "сброса пароля"
     html=f"<h2>{title}</h2><p>Код для {action}:</p><p style='font-size:28px;font-weight:700;letter-spacing:6px'>{code}</p><p>Код действует 10 минут. Если запрос делали не вы, проигнорируйте письмо.</p>"
-    async with httpx.AsyncClient(timeout=20,follow_redirects=False) as client:
-        response=await client.post("https://api.resend.com/emails",headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"},json={"from":os.getenv("MAIL_FROM","Perfecta <onboarding@resend.dev>"),"to":[email],"subject":title,"html":html})
-    if response.is_error:raise HTTPException(502,"Не удалось отправить письмо. Проверьте настройки Resend и адрес отправителя.")
+    return await send_resend_email(email,title,html,f"{purpose}-{challenge_id}")
 
 @app.get("/auth/username")
 async def username_status(username:str):
@@ -187,7 +200,7 @@ async def register_start(body:RegistrationStart,request:Request):
     if len(password)<8 or len(password.encode())>72:raise HTTPException(422,"Пароль должен занимать 8–72 UTF-8 байта")
     code=f"{secrets.randbelow(1000000):06d}"
     result=await rpc("begin_registration",{"p_secret":auth_secret(),"p_email":body.email.strip().lower(),"p_username":body.username.strip(),"p_password":password,"p_full_name":body.full_name.strip(),"p_code_hash":hashlib.sha256(code.encode()).hexdigest()})
-    await send_auth_email(result["email"],code,"registration")
+    await send_auth_email(result["email"],code,"registration",result["challenge_id"])
     return {"verification_required":True,"challenge_id":result["challenge_id"],"expires_in":600}
 
 @app.post("/auth/register/verify")
@@ -211,7 +224,7 @@ async def password_reset_start(body:ResetStart,request:Request):
     code=f"{secrets.randbelow(1000000):06d}"
     result=await rpc("begin_password_reset",{"p_secret":auth_secret(),"p_identifier":body.identifier.strip(),"p_code_hash":hashlib.sha256(code.encode()).hexdigest()})
     if result.get("should_send"):
-        await send_auth_email(result["email"],code,"password_reset")
+        await send_auth_email(result["email"],code,"password_reset",result["challenge_id"])
         return {"accepted":True,"challenge_id":result["challenge_id"],"expires_in":600}
     return {"accepted":True,"challenge_id":None}
 
@@ -229,15 +242,16 @@ async def logout(me=Depends(identity)):
 async def delete_account(body:Delete,me=Depends(identity)):
     if not body.confirm:raise HTTPException(409,"Подтвердите удаление аккаунта")
     if me.get("role")=="admin":raise HTTPException(403,"Администраторский аккаунт нельзя удалить через приложение")
-    email=me.get("email")
-    key=os.getenv("RESEND_API_KEY")
-    if key and email:
+    email=me.get("email"); student_id=me["student_id"]
+    await rpc("api_delete",{"p_token":me["token"],"p_entity":"students","p_id":student_id})
+    notification_sent=False
+    if os.getenv("RESEND_API_KEY") and email:
         html="<h2>Аккаунт Perfecta удалён</h2><p>Ваш профиль и связанные академические данные были удалены.</p><p><a href='https://student-performance-api-ee1k.onrender.com/'>Перейти на Perfecta</a></p>"
-        async with httpx.AsyncClient(timeout=20,follow_redirects=False) as client:
-            response=await client.post("https://api.resend.com/emails",headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"},json={"from":os.getenv("MAIL_FROM","Perfecta <onboarding@resend.dev>"),"to":[email],"subject":"Аккаунт Perfecta удалён","html":html})
-        if response.is_error:raise HTTPException(502,"Не удалось отправить уведомление об удалении")
-    await rpc("api_delete",{"p_token":me["token"],"p_entity":"students","p_id":me["student_id"]})
-    return {"deleted":True}
+        try:
+            await send_resend_email(email,"Аккаунт Perfecta удалён",html,f"account-deleted-{student_id}")
+            notification_sent=True
+        except HTTPException:pass
+    return {"deleted":True,"notification_sent":notification_sent}
 @app.get("/me")
 async def profile(me=Depends(identity)):return {k:v for k,v in me.items() if k!="token"}
 @app.get("/data")
