@@ -612,7 +612,7 @@ def prepared_action(action,data):
                 try:grade=float(item["grade_text"])
                 except (TypeError,ValueError):pass
             if grade is None:raise ValueError(f"Не указана оценка: {name}")
-            item["current_grade"]=grade;cleaned.append(item)
+            item["current_grade"]=grade;item.pop("grade_text",None);cleaned.append(item)
         if missing:
             return {"operation":"clarify","questions":["Укажите количество уроков отдельно для: "+", ".join(missing)+"."],"draft":{"operation":"import_profile","data":{"setup":setup,"subjects":subjects}}}
         a["data"]={"setup":setup,"subjects":cleaned}
