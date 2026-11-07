@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import ipaddress
 import json
+import math
 import os
 import socket
 import time
@@ -108,6 +109,7 @@ class Calculation(Strict):
     items:list[dict[str,Any]]=Field(default_factory=list,max_length=500)
     bands:list[dict[str,Any]]=Field(default_factory=list,max_length=100)
     overrides:dict[int,dict[str,Any]]=Field(default_factory=dict)
+    workload_conversions:dict[str,float]=Field(default_factory=dict)
 class AISettings(Strict):
     base_url:str=Field(max_length=300)
     model:str=Field(min_length=1,max_length=150)
@@ -288,7 +290,9 @@ async def calculator(body:Calculation,me=Depends(identity)):
             return {"calendar":body.calendar,"mode":body.mode,"attendance":round((attended+excused)/held*100,4),"physical_attendance":round(attended/held*100,4),"held":held,"attended":attended,"excused":excused,"saved":False}
         if not items:raise ValueError("Add at least one complete row")
         if high<=low or any(x.get("grade") is None or (x.get("credits") is None and x.get("workload_value") is None) or float(x.get("credits") if x.get("credits") is not None else x["workload_value"])<=0 or not low<=float(x["grade"])<=high for x in items):raise ValueError("Every row needs a valid grade and positive workload; empty fields are not zero")
-        result=calculate(items,bands)
+        conversions=body.workload_conversions or None
+        if conversions and any(not math.isfinite(float(v)) or float(v)<=0 for v in conversions.values()):raise ValueError("Workload conversion factors must be positive")
+        result=calculate(items,bands,conversions)
         if body.mode in ("gpa","course") and result["gpa"] is None:raise ValueError("A complete GPA scale is required")
         if body.mode=="course" and len(items)!=1:raise ValueError("Course mode accepts exactly one discipline")
         return {"calendar":body.calendar,"mode":body.mode,**result,"saved":False}
