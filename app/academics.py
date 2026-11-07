@@ -10,8 +10,13 @@ def item_weight(item):
     if "credits" in item or "workload_value" in item:raise ValueError("Workload is required")
     return 1
 
-def weighted(items):
-    valid = [(float(x["grade"]), float(item_weight(x))) for x in items if x.get("grade") is not None]
+def normalized_weight(item, conversions=None):
+    value=float(item_weight(item));unit=item.get("workload_unit","credits")
+    factor=(conversions or {}).get(unit)
+    return value*(float(factor) if factor is not None else 1)
+
+def weighted(items, conversions=None):
+    valid = [(float(x["grade"]), normalized_weight(x, conversions)) for x in items if x.get("grade") is not None]
     if not valid or any(w <= 0 or not math.isfinite(g+w) for g,w in valid):
         raise ValueError("Positive weights and finite grades are required")
     return sum(g*w for g,w in valid)/sum(w for _,w in valid)
@@ -30,15 +35,18 @@ def grade_points(grade, bands):
             return float(b["grade_points"])
     return None
 
-def calculate(items, bands=None):
-    score=weighted(items)
+def calculate(items, bands=None, conversions=None):
     units={x.get("workload_unit","credits") for x in items}
-    if len(units)>1:raise ValueError("Different workload units require explicit conversion")
-    points=[dict(grade=grade_points(float(x["grade"]), bands or []),credits=item_weight(x)) for x in items]
+    if len(units)>1 and (not conversions or any(u not in conversions for u in units)):
+        raise ValueError("Different workload units require conversion factors for every unit")
+    score=weighted(items, conversions)
+    points=[dict(grade=grade_points(float(x["grade"]), bands or []),credits=normalized_weight(x, conversions)) for x in items]
     gpa=weighted(points) if points and all(x["grade"] is not None for x in points) else None
     total=sum(float(item_weight(x)) for x in items)
+    normalized_total=sum(normalized_weight(x, conversions) for x in items)
     return {"average":round(score,4),"gpa":round(gpa,4) if gpa is not None else None,
-            "included_items":len(items),"credits":total if units=={"credits"} else None,"workload_total":total,"workload_unit":next(iter(units)),
+            "included_items":len(items),"credits":total if units=={"credits"} else None,"workload_total":total if len(units)==1 else None,"workload_unit":next(iter(units)) if len(units)==1 else "mixed",
+            "normalized_workload_total":normalized_total if conversions else None,"normalized_workload_unit":"academic_hours" if conversions else None,
             "gpa_note":None if gpa is not None else "No complete matching GPA conversion supplied"}
 
 def forecast(data, period_id, level="period"):
@@ -133,7 +141,11 @@ def forecast(data, period_id, level="period"):
                 raise ValueError("Insufficient completed years for whole-program forecast")
             selected += [historical_item(r) for r in old_records]
             coverage["completed_years"]=len(complete_years)
-    output=calculate(selected,bands)
+    selected_units={x.get("workload_unit","credits") for x in selected}
+    # Kazakhstan higher-education standard: one academic credit represents
+    # 30 academic hours of total student workload. Lessons remain incomparable.
+    conversions={"credits":30,"academic_hours":1} if selected_units <= {"credits","academic_hours"} else None
+    output=calculate(selected,bands,conversions)
     return {**output,"level":level,"period_id":period_id,"subjects":estimates,"coverage":coverage,
             "method_version":"conservative-baseline-v1","is_illustrative":True,
             "assumption":"Unobserved future work follows the weighted performance observed so far",
