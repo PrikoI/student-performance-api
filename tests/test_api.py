@@ -2,7 +2,7 @@ import json, os, unittest
 from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
-from app.main import Calculation, Chat, ExecutePlan, administrator, application_page, calculator, chat, execute_plan, limits, used_plans
+from app.main import Calculation, Chat, ExecutePlan, administrator, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -21,6 +21,11 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertIn("empty fields",ctx.exception.detail)
  async def test_course_mode_requires_gpa_scale(self):
   with self.assertRaises(HTTPException):await calculator(Calculation(calendar="semester",mode="course",items=[{"grade":90,"credits":3}]),STUDENT)
+ async def test_ai_plan_accepts_json_and_markdown_wrappers(self):
+  exact={"choices":[{"message":{"content":"{\"actions\":[{\"operation\":\"answer\",\"text\":\"ok\"}]}"}}]}
+  wrapped={"choices":[{"message":{"content":"Here is the plan:\n```json\n{\"actions\":[{\"operation\":\"answer\",\"text\":\"ok\"}]}\n```"}}]}
+  self.assertEqual(parse_ai_plan(exact)["actions"][0]["text"],"ok")
+  self.assertEqual(parse_ai_plan(wrapped)["actions"][0]["text"],"ok")
  async def test_write_plan_requires_confirmation(self):
   actions=[{"operation":"write","entity":"academic_performance","data":{"current_grade":80}},{"operation":"answer","text":"done"}]
   with patch("app.main.plan_actions",AsyncMock(return_value=actions)),patch("app.main.all_data",AsyncMock(return_value={})),patch("app.main.config",AsyncMock(return_value={})),patch("app.main.save",AsyncMock(return_value={"saved":True})) as save:
