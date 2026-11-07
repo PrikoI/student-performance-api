@@ -138,7 +138,11 @@ class Chat(Strict):
     locale:Literal["ru","kk","en","zh","es","zh-CN","zh-TW"]="ru"
 class ExecutePlan(Strict):
     confirmation_token: str=Field(max_length=30000)
+class PasswordChange(Strict):
+    current_password:SecretStr
+    new_password:SecretStr
 class Delete(Strict):
+    current_password:SecretStr
     confirm:bool=False
 
 @app.get("/health")
@@ -186,11 +190,28 @@ async def login(body:Login,request:Request):
 @app.post("/auth/logout")
 async def logout(me=Depends(identity)):
     await rpc("logout_student",{"p_session_token":me["token"]});return {"logged_out":True}
+@app.post("/account/password")
+async def change_account_password(body:PasswordChange,me=Depends(identity)):
+    current=body.current_password.get_secret_value()
+    new=body.new_password.get_secret_value()
+    if len(current.encode())>72:raise HTTPException(422,"Текущий пароль указан неверно")
+    if len(new)<8 or len(new.encode())>72:raise HTTPException(422,"Новый пароль должен занимать 8–72 UTF-8 байта")
+    return await rpc("change_own_password",{
+        "p_token":me["token"],
+        "p_current_password":current,
+        "p_new_password":new,
+    })
+
 @app.post("/account/delete")
 async def delete_account(body:Delete,me=Depends(identity)):
     if not body.confirm:raise HTTPException(409,"Подтвердите удаление аккаунта")
     if me.get("role")=="admin":raise HTTPException(403,"Администраторский аккаунт нельзя удалить через приложение")
-    deleted=await rpc("delete_own_account",{"p_token":me["token"]})
+    current=body.current_password.get_secret_value()
+    if not current or len(current.encode())>72:raise HTTPException(422,"Введите текущий пароль")
+    deleted=await rpc("delete_own_account",{
+        "p_token":me["token"],
+        "p_current_password":current,
+    })
     return {"deleted":True,"student_id":deleted.get("student_id")}
 @app.get("/me")
 async def profile(me=Depends(identity)):return {k:v for k,v in me.items() if k!="token"}
