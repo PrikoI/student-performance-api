@@ -6,6 +6,7 @@ import math
 import os
 import re
 import socket
+import secrets
 import time
 from collections import defaultdict, deque
 from typing import Any, Literal
@@ -82,10 +83,21 @@ async def administrator(me=Depends(identity)):
 class Strict(BaseModel):
     model_config=ConfigDict(extra="forbid")
 class Login(Strict):
-    email:str=Field(max_length=100)
+    identifier:str|None=Field(default=None,max_length=100)
+    email:str|None=Field(default=None,max_length=100)
     password:SecretStr
-class Registration(Login):
+class RegistrationStart(Strict):
+    email:str=Field(max_length=100)
+    username:str=Field(min_length=3,max_length=30)
+    password:SecretStr
     full_name:str=Field(min_length=1,max_length=100)
+class VerifyCode(Strict):
+    challenge_id:str=Field(max_length=80)
+    code:str=Field(min_length=6,max_length=6)
+class ResetStart(Strict):
+    identifier:str=Field(min_length=1,max_length=100)
+class ResetComplete(VerifyCode):
+    new_password:SecretStr
 class Record(Strict):
     data:dict[str,Any]
 class BatchItem(Strict):
@@ -139,22 +151,71 @@ def application_page():return Path(__file__).with_name("app.html").read_text(enc
 @app.head("/")
 def application_head():return HTMLResponse("")
 
+def auth_secret():
+    value=os.getenv("AUTH_INTERNAL_SECRET")
+    if not value:raise HTTPException(503,"Registration service is not configured")
+    return value
+
+async def send_auth_email(email,code,purpose):
+    key=os.getenv("RESEND_API_KEY")
+    if not key:raise HTTPException(503,"Email delivery is not configured yet. Add RESEND_API_KEY in Render.")
+    title="Подтверждение регистрации" if purpose=="registration" else "Сброс пароля"
+    action="завершения регистрации" if purpose=="registration" else "сброса пароля"
+    html=f"<h2>{title}</h2><p>Код для {action}:</p><p style='font-size:28px;font-weight:700;letter-spacing:6px'>{code}</p><p>Код действует 10 минут. Если запрос делали не вы, проигнорируйте письмо.</p>"
+    async with httpx.AsyncClient(timeout=20,follow_redirects=False) as client:
+        response=await client.post("https://api.resend.com/emails",headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"},json={"from":os.getenv("MAIL_FROM","Perfecta <onboarding@resend.dev>"),"to":[email],"subject":title,"html":html})
+    if response.is_error:raise HTTPException(502,"Не удалось отправить письмо. Проверьте настройки Resend и адрес отправителя.")
+
+@app.get("/auth/username")
+async def username_status(username:str):
+    return await rpc("username_status",{"p_username":username})
+
 @app.post("/auth/register")
-async def register(body:Registration,request:Request):
-    throttle("register:"+request.client.host,5,3600)
+@app.post("/auth/register/start")
+async def register_start(body:RegistrationStart,request:Request):
+    throttle("register-ip:"+request.client.host,5,3600)
+    throttle("register-email:"+hashlib.sha256(body.email.strip().lower().encode()).hexdigest(),3,600)
     password=body.password.get_secret_value()
-    if "@" not in body.email or "." not in body.email.rsplit("@",1)[-1]:raise HTTPException(422,"Enter a valid email address")
-    if len(password)<8:raise HTTPException(422,"Password must contain at least 8 characters")
-    if len(password.encode())>72:raise HTTPException(422,"Password must fit 72 UTF-8 bytes")
-    try:return await rpc("register_student",{"p_email":body.email.strip().lower(),"p_password":password,"p_full_name":body.full_name.strip()})
-    except HTTPException as e:
-        if e.status_code==409:raise HTTPException(409,"An account with this email already exists")
-        raise
+    if "@" not in body.email or "." not in body.email.rsplit("@",1)[-1]:raise HTTPException(422,"Введите корректный email")
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{2,29}",body.username):raise HTTPException(422,"Логин: 3–30 латинских букв, цифр или _. Первый символ — буква.")
+    if len(password)<8 or len(password.encode())>72:raise HTTPException(422,"Пароль должен занимать 8–72 UTF-8 байта")
+    code=f"{secrets.randbelow(1000000):06d}"
+    result=await rpc("begin_registration",{"p_secret":auth_secret(),"p_email":body.email.strip().lower(),"p_username":body.username.strip(),"p_password":password,"p_full_name":body.full_name.strip(),"p_code_hash":hashlib.sha256(code.encode()).hexdigest()})
+    await send_auth_email(result["email"],code,"registration")
+    return {"verification_required":True,"challenge_id":result["challenge_id"],"expires_in":600}
+
+@app.post("/auth/register/verify")
+async def register_verify(body:VerifyCode,request:Request):
+    throttle("verify:"+request.client.host,12,600)
+    if not body.code.isdigit():raise HTTPException(422,"Введите шестизначный код")
+    return await rpc("verify_registration",{"p_secret":auth_secret(),"p_challenge_id":body.challenge_id,"p_code":body.code})
+
 @app.post("/auth/login")
 async def login(body:Login,request:Request):
     throttle("login:"+request.client.host,10,60)
+    identifier=(body.identifier or body.email or "").strip()
+    if not identifier:raise HTTPException(422,"Введите email или логин")
     if len(body.password.get_secret_value().encode())>72:raise HTTPException(422,"Password must fit 72 UTF-8 bytes")
-    return await rpc("login_student",{"p_email":body.email,"p_password":body.password.get_secret_value()})
+    return await rpc("login_student",{"p_email":identifier,"p_password":body.password.get_secret_value()})
+
+@app.post("/auth/password-reset/start")
+async def password_reset_start(body:ResetStart,request:Request):
+    throttle("reset-ip:"+request.client.host,5,3600)
+    throttle("reset-id:"+hashlib.sha256(body.identifier.strip().encode()).hexdigest(),3,600)
+    code=f"{secrets.randbelow(1000000):06d}"
+    result=await rpc("begin_password_reset",{"p_secret":auth_secret(),"p_identifier":body.identifier.strip(),"p_code_hash":hashlib.sha256(code.encode()).hexdigest()})
+    if result.get("should_send"):
+        await send_auth_email(result["email"],code,"password_reset")
+        return {"accepted":True,"challenge_id":result["challenge_id"],"expires_in":600}
+    return {"accepted":True,"challenge_id":None}
+
+@app.post("/auth/password-reset/complete")
+async def password_reset_complete(body:ResetComplete,request:Request):
+    throttle("reset-complete:"+request.client.host,12,600)
+    password=body.new_password.get_secret_value()
+    if not body.code.isdigit():raise HTTPException(422,"Введите шестизначный код")
+    if len(password)<8 or len(password.encode())>72:raise HTTPException(422,"Пароль должен занимать 8–72 UTF-8 байта")
+    return await rpc("complete_password_reset",{"p_secret":auth_secret(),"p_challenge_id":body.challenge_id,"p_code":body.code,"p_new_password":password})
 @app.post("/auth/logout")
 async def logout(me=Depends(identity)):
     await rpc("logout_student",{"p_session_token":me["token"]});return {"logged_out":True}
