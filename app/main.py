@@ -142,7 +142,7 @@ class AISettings(Strict):
     enabled:bool=False
 class Chat(Strict):
     message:str=Field(min_length=1,max_length=6000)
-    locale:Literal["ru","kk","en","zh","es"]="ru"
+    locale:Literal["ru","kk","en","zh","es","zh-CN","zh-TW"]="ru"
 class ExecutePlan(Strict):
     confirmation_token: str=Field(max_length=30000)
 class Delete(Strict):
@@ -457,8 +457,9 @@ def safe_provider_error(response):
         return str(detail)[:240]
     except Exception:return (response.text or "request rejected")[:240]
 
-AI_LANGUAGES={"ru":"Russian","kk":"Kazakh","en":"English","zh":"Chinese","es":"Spanish"}
-def normalize_ai_locale(locale): return locale if locale in AI_LANGUAGES else "ru"
+AI_LANGUAGES={"ru":"Russian","kk":"Kazakh","en":"English","zh":"Simplified Chinese","zh-CN":"Simplified Chinese","zh-TW":"Traditional Chinese","es":"Spanish"}
+def normalize_ai_locale(locale):
+    return {"zh-CN":"zh","zh-TW":"zh"}.get(locale,locale) if locale in AI_LANGUAGES else "ru"
 def ai_phrase(locale,ru,kk,en,zh=None,es=None):
     return {"ru":ru,"kk":kk,"en":en,"zh":zh or en,"es":es or en}.get(normalize_ai_locale(locale),ru)
 
@@ -471,8 +472,8 @@ async def plan_actions(message,data,c,locale="ru"):
     context={k:v for k,v in data.items() if k in ("academic_settings","academic_years","academic_periods","courses","academic_performance","grading_scales","grading_bands")}
     context_text=json.dumps(context,ensure_ascii=False)
     if len(context_text)>18000:raise HTTPException(413,"Слишком большой учебный контекст для ИИ. Используйте один период или локальный режим.")
-    language_name=AI_LANGUAGES.get(normalize_ai_locale(locale),"Russian")
-    prompt='''The selected response language is {language_name}. Understand the user's request in any language, but write every answer, clarification question, draft explanation, and error-facing text in {language_name}. Never switch language based on the input text. Return only JSON {"actions":[...]}. Preserve ALL requests in order, at most 5 actions.
+    language_name=AI_LANGUAGES.get(locale,AI_LANGUAGES.get(normalize_ai_locale(locale),"Russian"))
+    prompt='''The selected application locale is {language_name}. This locale is authoritative. Understand the user's request in any language, but write every answer, clarification question, draft explanation, and error-facing text in {language_name}. Never switch language based on the input text or conversation history. Do not mix languages. Return only JSON {"actions":[...]}. Preserve ALL requests in order, at most 5 actions.
 Allowed action objects:
 {"operation":"read","entity":"academic_performance","query":""}
 {"operation":"write","entity":"academic_performance","data":{...}}
