@@ -431,13 +431,16 @@ def deterministic_actions(message,data):
             raw=message.split("Предыдущий черновик данных:",1)[1].split("Ответ пользователя на уточнение:",1)[0].strip()
             ctx=_json.loads(raw)
             draft=((ctx.get("actions") or [{}])[0].get("draft") or {})
+            source=draft.get("data",draft)
+            subjects=source.get("subjects") or []
+            setup=source.get("setup") or {}
             answer=message.split("Ответ пользователя на уточнение:",1)[-1].casefold()
             match=re.search(r"(\d+(?:[.,]\d+)?)\s*(кредит|кред|урок|час)",answer)
-            if match and draft.get("subjects"):
+            if match and subjects:
                 unit="credits" if "кредит" in match.group(2) else ("lessons" if "урок" in match.group(2) else "academic_hours")
-                return [{"operation":"import_profile","data":{"setup":draft.get("setup",{}),"subjects":draft["subjects"],"common_workload":{"value":float(match.group(1).replace(",",".")),"unit":unit}}}]
-            if "пропустить нагрузку" in answer and draft.get("subjects"):
-                return [{"operation":"import_profile","data":{"setup":draft.get("setup",{}),"subjects":draft["subjects"],"common_workload":{"value":1,"unit":"credits"}}}]
+                return [{"operation":"import_profile","data":{"setup":setup,"subjects":subjects,"common_workload":{"value":float(match.group(1).replace(",",".")),"unit":unit}}}]
+            if "пропустить нагрузку" in answer and subjects:
+                return [{"operation":"import_profile","data":{"setup":setup,"subjects":subjects,"common_workload":{"value":1,"unit":"credits"}}}]
         except (ValueError,TypeError,KeyError,IndexError):
             pass
     marker=text.find("итоговые оценки")
@@ -585,7 +588,7 @@ def prepared_action(action,data):
         if not isinstance(subjects,list) or not subjects:raise ValueError("Не найден ни один предмет")
         common=fields.get("common_workload")
         if common is None:
-            return {"operation":"clarify","questions":["Профиль распознан: школа, учебный год, 4 четверти и предметные оценки. Какую общую нагрузку применить к предметам? Например: «по 1 кредиту каждому» или «по 2 урока каждому». Также можно ответить «пропустить нагрузку»."],"draft":{"setup":setup,"subjects":subjects}}
+            return {"operation":"clarify","questions":["Профиль распознан: школа, учебный год, 4 четверти и предметные оценки. Какую общую нагрузку применить к предметам? Например: «по 1 кредиту каждому» или «по 2 урока каждому». Также можно ответить «пропустить нагрузку»."],"draft":{"operation":"import_profile","data":{"setup":setup,"subjects":subjects}}}
         value=common.get("value") if isinstance(common,dict) else common
         unit=common.get("unit","credits") if isinstance(common,dict) else fields.get("workload_unit","credits")
         if str(value).casefold() in ("пропустить","skip","нет"): value=1; unit="credits"
