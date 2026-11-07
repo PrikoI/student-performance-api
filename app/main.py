@@ -242,8 +242,8 @@ async def logout(me=Depends(identity)):
 async def delete_account(body:Delete,me=Depends(identity)):
     if not body.confirm:raise HTTPException(409,"Подтвердите удаление аккаунта")
     if me.get("role")=="admin":raise HTTPException(403,"Администраторский аккаунт нельзя удалить через приложение")
-    email=me.get("email"); student_id=me["student_id"]
-    await rpc("api_delete",{"p_token":me["token"],"p_entity":"students","p_id":student_id})
+    deleted=await rpc("delete_own_account",{"p_token":me["token"]})
+    email=deleted.get("email"); student_id=deleted.get("student_id")
     notification_sent=False
     if os.getenv("RESEND_API_KEY") and email:
         html="<h2>Аккаунт Perfecta удалён</h2><p>Ваш профиль и связанные академические данные были удалены.</p><p><a href='https://student-performance-api-ee1k.onrender.com/'>Перейти на Perfecta</a></p>"
