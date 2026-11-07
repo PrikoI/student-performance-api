@@ -49,7 +49,8 @@ def calculate(items, bands=None, conversions=None):
             "normalized_workload_total":normalized_total if conversions else None,"normalized_workload_unit":"academic_hours" if conversions else None,
             "gpa_note":None if gpa is not None else "No complete matching GPA conversion supplied"}
 
-def forecast(data, period_id, level="period"):
+def forecast(data, period_id, level="period", method="baseline"):
+    if method not in ("baseline","adaptive"): raise ValueError("Unknown forecast method")
     periods={x["period_id"]:x for x in data["academic_periods"]}
     if period_id not in periods: raise ValueError("Period not found")
     period=periods[period_id]
@@ -70,9 +71,33 @@ def forecast(data, period_id, level="period"):
         current=float(r["current_grade"])
         # Conservative baseline: current performance with a small recent-assessment signal.
         recent=r.get("recent_assessment_score")
-        estimate=current if recent is None else .8*current+.2*float(recent)
-        estimate=max(lo,min(hi,estimate))
+        baseline=current if recent is None else .8*current+.2*float(recent)
+        estimate=max(lo,min(hi,baseline))
         components=[c for c in data.get("assessment_components",[]) if c["performance_id"]==r["performance_id"]]
+        adaptive_signals=[]
+        if method=="adaptive":
+            component_ids={c["component_id"] for c in components}
+            all_assessments=[x for x in data.get("assessments",[]) if x["component_id"] in component_ids]
+            result_by_assessment={x["assessment_id"]:x for x in data.get("assessment_results",[]) if x.get("status")=="graded" and x.get("score") is not None}
+            observations=[]
+            for assessment in sorted(all_assessments,key=lambda x:(str(x.get("due_at") or ""),x["assessment_id"])):
+                result=result_by_assessment.get(assessment["assessment_id"])
+                maximum=float(assessment["maximum_score"])
+                if result and maximum>0:
+                    observations.append(max(lo,min(hi,lo+(hi-lo)*float(result["score"])/maximum)))
+            if observations:
+                observed_mean=sum(observations)/len(observations)
+                middle=max(1,len(observations)//2)
+                early=sum(observations[:middle])/len(observations[:middle])
+                late=sum(observations[middle:])/len(observations[middle:]) if observations[middle:] else early
+                trend=late-early
+                completion=min(1,len(observations)/max(1,len(all_assessments)))
+                confidence=min(.75,.15+.12*len(observations))
+                estimate=(1-confidence)*baseline+confidence*observed_mean+.5*trend*(1-completion)
+                estimate=max(lo,min(hi,estimate))
+                adaptive_signals=[f"Adaptive data points: {len(observations)}",f"Observed work: {round(completion*100)}%",f"Recent trend: {round(trend,2):+}"]
+            else:
+                adaptive_signals=["Adaptive forecast fell back to the baseline because no graded work is available"]
         component_estimates={}
         for c in components:
             assessments=[a for a in data.get("assessments",[]) if a["component_id"]==c["component_id"]]
@@ -90,7 +115,7 @@ def forecast(data, period_id, level="period"):
             if c["performance_id"]==r["performance_id"] and c["component_type"] in ("midterm","final"):
                 exam.append({"component_id":c["component_id"],"name":c["name"],"estimated_grade":round(component_estimates.get(c["component_id"],estimate),2),
                              "note":"Same baseline on course scale; not an independently validated exam model"})
-        signals=[]
+        signals=list(adaptive_signals)
         if r.get("attendance") is not None and float(r["attendance"])<75:signals.append("Attendance below illustrative 75% threshold")
         if r.get("assignments_total") and (r.get("assignments_completed") or 0)<r["assignments_total"]:signals.append("There are unfinished assignments")
         estimates.append({"performance_id":r["performance_id"],"course_id":r["course_id"],"grade":estimate,"signals":signals,
@@ -147,7 +172,7 @@ def forecast(data, period_id, level="period"):
     conversions={"credits":30,"academic_hours":1} if selected_units <= {"credits","academic_hours"} else None
     output=calculate(selected,bands,conversions)
     return {**output,"level":level,"period_id":period_id,"subjects":estimates,"coverage":coverage,
-            "method_version":"conservative-baseline-v1","is_illustrative":True,
+            "method_version":"adaptive-forecast-v1" if method=="adaptive" else "conservative-baseline-v1","is_illustrative":True,
             "assumption":"Unobserved future work follows the weighted performance observed so far",
             "limitations":["Not trained or validated on student outcomes","Not a guaranteed result",
                            "Year/program averages assume comparable future subject and credit distribution",
