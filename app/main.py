@@ -659,7 +659,7 @@ def current_period_id(data):
 def owned_id(data,entity,key,value):
     return value is not None and any(_same_id(row.get(key),value) for row in data.get(entity,[]))
 
-def prepared_action(action,data):
+def prepared_action(action,data,locale="ru"):
     if not isinstance(action,dict):raise ValueError("AI action must be an object")
     a=dict(action);op=a.get("operation")
     if op=="read":
@@ -683,19 +683,19 @@ def prepared_action(action,data):
         name=str(fields.get("course_name") or fields.get("name") or "").strip()
         draft={"course_name":name or None}
         questions=[]
-        if not name:questions.append("Как называется предмет?")
+        if not name:questions.append(ai_phrase(locale,"Как называется предмет?","Пәннің атауы қандай?","What is the subject name?"))
         elif len(name)>100:raise ValueError("A subject name of up to 100 characters is required")
         clean={"course_name":name} if name else {}
         for key in ("credits","workload_value","workload_unit","current_grade","attendance","recent_assessment_score","lessons_planned","lessons_held","lessons_attended","lessons_excused","assignments_completed","assignments_total"):
             if fields.get(key) is not None:clean[key]=fields[key];draft[key]=fields[key]
         weight=clean.get("workload_value") if clean.get("workload_value") is not None else clean.get("credits")
-        if weight is None:questions.append("Какова нагрузка предмета и единица измерения: кредиты, академические часы или уроки?")
+        if weight is None:questions.append(ai_phrase(locale,"Какова нагрузка предмета и единица измерения: кредиты, академические часы или уроки?","Пән жүктемесі және өлшем бірлігі қандай: кредит, академиялық сағат немесе сабақ?","What is the subject workload and unit: credits, academic hours, or lessons?"))
         elif float(weight)<=0:raise ValueError("Positive workload is required")
         unit=clean.get("workload_unit") or "credits"
-        if unit not in ("credits","academic_hours","lessons"):questions.append("В какой единице указана нагрузка: кредиты, академические часы или уроки?")
-        if clean.get("current_grade") is None:questions.append("Какую текущую оценку сохранить?")
+        if unit not in ("credits","academic_hours","lessons"):questions.append(ai_phrase(locale,"В какой единице указана нагрузка: кредиты, академические часы или уроки?","Жүктеме қай бірлікте көрсетілген: кредит, академиялық сағат немесе сабақ?","Which unit is the workload in: credits, academic hours, or lessons?"))
+        if clean.get("current_grade") is None:questions.append(ai_phrase(locale,"Какую текущую оценку сохранить?","Ағымдағы қандай бағаны сақтау керек?","What current grade should be saved?"))
         if not data.get("academic_periods") and not fields.get("period_id"):
-            questions.append("Учебный период ещё не создан. Сначала создать учебную программу и активный период?")
+            questions.append(ai_phrase(locale,"Учебный период ещё не создан. Сначала создать учебную программу и активный период?","Оқу кезеңі әлі жасалмаған. Алдымен оқу бағдарламасы мен белсенді кезеңді жасау керек пе?","The academic period does not exist yet. Create the program and active period first?"))
         if questions:
             return {"operation":"clarify","questions":questions,"draft":draft}
         clean["workload_unit"]=unit;clean["workload_value"]=weight
@@ -758,10 +758,10 @@ async def create_subject_record(fields,me,data):
 async def import_profile(fields,me,data):
     return await rpc("import_academic_subjects",{"p_session_token":me["token"],"p_setup":fields.get("setup") or {},"p_subjects":fields["subjects"]})
 
-async def execute_actions(actions,me,confirmed):
+async def execute_actions(actions,me,confirmed,locale="ru"):
         results=[]
         data=await all_data(me)
-        try:actions=[prepared_action(a,data) for a in actions]
+        try:actions=[prepared_action(a,data,locale) for a in actions]
         except (HTTPException,ValueError,KeyError,TypeError) as e:
             return {"results":[{"index":0,"status":"failed","detail":e.detail if isinstance(e,HTTPException) else str(e)}],"max_actions":5}
         clarifications=[{"index":i,"operation":"clarify","status":"clarification_required","questions":a.get("questions",[]),"draft":a.get("draft",{})} for i,a in enumerate(actions) if a.get("operation")=="clarify"]
@@ -769,10 +769,10 @@ async def execute_actions(actions,me,confirmed):
             return {"results":clarifications,"status":"clarification_required","draft_context":{"actions":[a for a in actions if a.get("operation")=="clarify"],"original_request":None},"max_actions":5}
         if not confirmed and any(a.get("operation") in AI_MUTATIONS for a in actions):
             first=next(i for i,a in enumerate(actions) if a.get("operation") in AI_MUTATIONS)
-            prefix=await execute_actions(actions[:first],me,True) if first else {"results":[]}
+            prefix=await execute_actions(actions[:first],me,True,locale) if first else {"results":[]}
             if any(r["status"]=="failed" for r in prefix["results"]):return prefix
             pending=actions[first:]
-            sealed=cipher().encrypt(json.dumps({"account_id":me["account_id"],"actions":pending}).encode()).decode()
+            sealed=cipher().encrypt(json.dumps({"account_id":me["account_id"],"locale":locale,"actions":pending}).encode()).decode()
             return {"results":prefix["results"],"status":"confirmation_required","proposed_actions":pending,"confirmation_token":sealed}
         for index,a in enumerate(actions):
             try:
@@ -816,7 +816,7 @@ async def execute_plan(body:ExecutePlan,me=Depends(identity)):
     for key,created in list(used_plans.items()):
         if created<time.monotonic()-600:del used_plans[key]
     async with asyncio.timeout(90):
-        return await execute_actions(plan["actions"],me,True)
+        return await execute_actions(plan["actions"],me,True,normalize_ai_locale(plan.get("locale","ru")) )
 
 used_plans={}
 
