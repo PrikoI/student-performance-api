@@ -425,7 +425,7 @@ def deterministic_actions(message,data):
     text=message.casefold()
     write_request=any(x in text for x in ("добав", "измени", "заполни", "удали", "сохрани", "создай", "update", "add ", "delete", "save"))
     if write_request:
-        match=re.search(r"(?:добавь|добавить|создай|создать)\\s+(.+?)\\s+предмет",text)
+        match=re.search(r"(?:добавь|добавить|создай|создать)\s+(.+?)\s+предмет",text)
         if match:
             return [{"operation":"create_subject","data":{"course_name":match.group(1).strip()}}]
         return None
