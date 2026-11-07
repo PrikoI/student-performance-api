@@ -59,6 +59,10 @@ async def rpc(name,body):
     if r.is_error:
         payload=r.json() if r.headers.get("content-type","").startswith("application/json") else {}
         code=payload.get("code","")
+        controlled=payload.get("message") if code=="P0001" else None
+        if controlled:
+            conflict=any(x in controlled.casefold() for x in ("already","taken","занят","существ"))
+            raise HTTPException(409 if conflict else 422,str(controlled)[:240])
         friendly={
             "23505":"This subject already has a result for the selected period",
             "23503":"The selected period or subject does not belong to this account",
