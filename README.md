@@ -1,7 +1,7 @@
 # Student Performance API
 
 FastAPI backend for the Student Performance prototype. Existing Supabase is the persistent store.
-No student data or credentials are committed. Figma is not modified by this repository.
+No student data or credentials are committed. Figma is not modified by this repository.\n\n**Live application:** https://student-performance-api-ee1k.onrender.com
 
 ## Run
 Python 3.12. Install requirements.txt and run:
