@@ -1,8 +1,9 @@
 import json, os, unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
-from app.main import Calculation, Chat, ExecutePlan, administrator, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions
+from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, administrator, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -14,6 +15,18 @@ class APITests(unittest.IsolatedAsyncioTestCase):
  async def test_admin_role(self):
   with self.assertRaises(HTTPException) as ctx:await administrator(STUDENT)
   self.assertEqual(ctx.exception.status_code,403)
+ async def test_registration_shell_has_no_email_codes_or_recovery(self):
+  html=application_page()
+  self.assertNotIn('id="forgotAuth"',html)
+  self.assertNotIn('id="verificationCode"',html)
+  self.assertNotIn('/auth/password-reset/start',html)
+ async def test_registration_creates_session_immediately(self):
+  body=RegistrationStart(email="new@example.com",username="NewUser",password="password123",full_name="New User")
+  request=SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))
+  result={"session_token":"token","student_id":99}
+  with patch("app.main.auth_secret",return_value="secret"),patch("app.main.rpc",AsyncMock(return_value=result)) as rpc:
+   self.assertEqual(await register_start(body,request),result)
+   rpc.assert_awaited_once_with("register_without_email_verification",{"p_secret":"secret","p_email":"new@example.com","p_username":"NewUser","p_password":"password123","p_full_name":"New User"})
  async def test_manual_calculation(self):
   r=await calculator(Calculation(calendar="quarter",mode="average",items=[{"grade":80,"credits":1},{"grade":100,"credits":3}]),STUDENT);self.assertEqual(r["average"],95)
  async def test_empty_calculator_fields_are_not_zero(self):
