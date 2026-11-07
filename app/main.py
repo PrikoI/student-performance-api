@@ -299,9 +299,15 @@ async def config(me):
     return await rpc("api_ai_config",{"p_token":me["token"],"p_config":None})
 def public_config(c):
     return {k:v for k,v in (c or {}).items() if k!="encrypted_key"}|{"key_configured":bool(c and c.get("encrypted_key"))}
+def normalize_provider_url(url):
+    url=url.rstrip("/")
+    for suffix in ("/chat/completions","/responses"):
+        if url.endswith(suffix):url=url[:-len(suffix)].rstrip("/")
+    return url
 @app.get("/admin/ai")
 async def get_ai(me=Depends(administrator)):return public_config(await config(me))
 def validate_provider(url):
+    url=normalize_provider_url(url)
     parsed=urlparse(url)
     hosts=os.getenv("AI_ALLOWED_HOSTS","api.openai.com,openrouter.ai,api.groq.com,generativelanguage.googleapis.com").split(",")
     if parsed.scheme!="https" or parsed.hostname not in hosts or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.port not in (None,443):
@@ -310,11 +316,11 @@ def validate_provider(url):
         if not ipaddress.ip_address(info[4][0]).is_global:raise HTTPException(422,"Private AI endpoint forbidden")
 @app.put("/admin/ai")
 async def put_ai(body:AISettings,me=Depends(administrator)):
-    validate_provider(body.base_url)
+    base_url=normalize_provider_url(body.base_url);validate_provider(base_url)
     old=await config(me) or {}
     encrypted=cipher().encrypt(body.api_key.get_secret_value().encode()).decode() if body.api_key else old.get("encrypted_key")
     if body.enabled and not encrypted:raise HTTPException(422,"API key required")
-    saved=await rpc("api_ai_config",{"p_token":me["token"],"p_config":{"base_url":body.base_url.rstrip("/"),"model":body.model,"enabled":body.enabled,"encrypted_key":encrypted}})
+    saved=await rpc("api_ai_config",{"p_token":me["token"],"p_config":{"base_url":base_url,"model":body.model,"enabled":body.enabled,"encrypted_key":encrypted}})
     return public_config(saved)
 
 def parse_ai_plan(payload):
@@ -341,7 +347,7 @@ def safe_provider_error(response):
 
 async def plan_actions(message,data,c):
     if not c or not c.get("enabled") or not c.get("encrypted_key"):raise HTTPException(503,"AI is not configured")
-    validate_provider(c["base_url"])
+    base_url=normalize_provider_url(c["base_url"]);validate_provider(base_url)
     try:key=cipher().decrypt(c["encrypted_key"].encode()).decode()
     except InvalidToken:raise HTTPException(503,"AI key could not be decrypted")
     # Never send names/emails, secrets, session tokens, or admin-wide data to a model.
@@ -363,14 +369,14 @@ Writes require user confirmation in the application.'''
     try:
         async with httpx.AsyncClient(timeout=40,follow_redirects=False) as client:
             headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"}
-            if urlparse(c["base_url"]).hostname=="openrouter.ai":headers|={"HTTP-Referer":"https://student-performance-api-ee1k.onrender.com","X-Title":"Student Performance"}
+            if urlparse(base_url).hostname=="openrouter.ai":headers|={"HTTP-Referer":"https://student-performance-api-ee1k.onrender.com","X-Title":"Student Performance"}
             request_body={"model":c["model"],"messages":[{"role":"system","content":prompt},
                 {"role":"user","content":json.dumps({"request":message,"academic_records":json.loads(context_text)},ensure_ascii=False)}],
                 "max_tokens":2500,"temperature":0,"response_format":{"type":"json_object"}}
-            r=await client.post(c["base_url"]+"/chat/completions",headers=headers,json=request_body)
+            r=await client.post(base_url+"/chat/completions",headers=headers,json=request_body)
             if r.status_code in (400,422) and "response_format" in safe_provider_error(r).casefold():
                 request_body.pop("response_format",None)
-                r=await client.post(c["base_url"]+"/chat/completions",headers=headers,json=request_body)
+                r=await client.post(base_url+"/chat/completions",headers=headers,json=request_body)
             r.raise_for_status()
             plan=parse_ai_plan(r.json())
     except httpx.HTTPStatusError as e:raise HTTPException(502,f"AI provider returned {e.response.status_code}: {safe_provider_error(e.response)}")
