@@ -177,7 +177,27 @@ async def send_resend_email(email,subject,html,idempotency_key):
             if response.status_code not in (429,500,502,503,504) or attempt==2:break
             retry_after=response.headers.get("retry-after")
             await asyncio.sleep(min(10,float(retry_after)) if retry_after and retry_after.replace(".","",1).isdigit() else 2**attempt)
-    raise HTTPException(502,"Не удалось отправить письмо. Проверьте настройки Resend и адрес отправителя.")
+    try:
+        provider_error=response.json()
+        provider_message=str(provider_error.get("message",""))
+    except (ValueError,AttributeError):
+        provider_message=""
+    normalized_error=provider_message.casefold()
+    if any(marker in normalized_error for marker in (
+        "testing emails","own email address","verify a domain","domain is not verified",
+        "domain not found","sender domain",
+    )):
+        raise HTTPException(
+            503,
+            "Письмо не отправлено: тестовый адрес onboarding@resend.dev может писать только владельцу аккаунта Resend. "
+            "Чтобы восстанавливать пароль на любых адресах, добавьте и подтвердите собственный домен в Resend, "
+            "затем укажите MAIL_FROM с этим доменом в Render."
+        )
+    if response.status_code==429:
+        raise HTTPException(429,"Лимит отправки писем временно исчерпан. Попробуйте позже.")
+    if response.status_code in (401,403):
+        raise HTTPException(503,"Resend отклонил авторизацию или адрес отправителя. Проверьте RESEND_API_KEY и MAIL_FROM.")
+    raise HTTPException(502,"Почтовый сервис отклонил письмо. Проверьте адрес получателя и настройки Resend.")
 
 async def send_auth_email(email,code,purpose,challenge_id):
     title="Подтверждение регистрации" if purpose=="registration" else "Сброс пароля"
