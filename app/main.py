@@ -400,14 +400,16 @@ Writes require user confirmation in the application.'''
             if urlparse(base_url).hostname=="openrouter.ai":headers|={"HTTP-Referer":"https://student-performance-api-ee1k.onrender.com","X-Title":"Student Performance"}
             request_body={"model":c["model"],"messages":[{"role":"system","content":prompt},
                 {"role":"user","content":json.dumps({"request":message,"academic_records":json.loads(context_text)},ensure_ascii=False)}],
-                "max_tokens":2500,"temperature":0,"response_format":{"type":"json_object"}}
+                "max_tokens":1200,"temperature":0,"response_format":{"type":"json_object"}}
             r=await client.post(base_url+"/chat/completions",headers=headers,json=request_body)
             if r.status_code in (400,422) and "response_format" in safe_provider_error(r).casefold():
                 request_body.pop("response_format",None)
                 r=await client.post(base_url+"/chat/completions",headers=headers,json=request_body)
             r.raise_for_status()
             plan=parse_ai_plan(r.json())
-    except httpx.HTTPStatusError as e:raise HTTPException(502,f"AI provider returned {e.response.status_code}: {safe_provider_error(e.response)}")
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code==402:raise HTTPException(502,"OpenRouter balance is too low for this model. The response limit was reduced; retry or choose a cheaper model if the error continues.")
+        raise HTTPException(502,f"AI provider returned {e.response.status_code}: {safe_provider_error(e.response)}")
     except httpx.HTTPError as e:raise HTTPException(502,f"Could not reach AI provider: {type(e).__name__}")
     except (KeyError,ValueError,TypeError,json.JSONDecodeError):raise HTTPException(502,"AI returned an invalid action plan. Choose a model with JSON output support or retry.")
     actions=plan.get("actions")
