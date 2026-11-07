@@ -122,6 +122,7 @@ class AcademicSetup(Strict):
 class Prediction(Strict):
     period_id:int
     level:Literal["period","year","program"]="period"
+    method:Literal["baseline","adaptive"]="baseline"
     save:bool=False
 class Calculation(Strict):
     mode:Literal["average","gpa","course","attendance"]="average"
@@ -404,7 +405,7 @@ async def calculator(body:Calculation,me=Depends(identity)):
 
 @app.post("/predict")
 async def predict(body:Prediction,me=Depends(identity)):
-    try:result=forecast(await all_data(me),body.period_id,body.level)
+    try:result=forecast(await all_data(me),body.period_id,body.level,body.method)
     except (ValueError,KeyError,TypeError) as e:raise HTTPException(422,str(e))
     if body.save:
         result["prediction_id"]=await rpc("api_save_prediction",{"p_token":me["token"],"p_result":result})
