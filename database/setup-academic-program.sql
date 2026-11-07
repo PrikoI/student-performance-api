@@ -23,8 +23,8 @@ BEGIN
   VALUES(sid,scale_name,0,100) RETURNING grading_scales.scale_id INTO scale_id;
   IF cal='quarter' THEN
     INSERT INTO public.grading_bands(scale_id,score_range,letter_grade,grade_points) VALUES
-      (scale_id,numrange(0,40,'[)'),'2',2),(scale_id,numrange(40,65,'[)'),'3',3),
-      (scale_id,numrange(65,85,'[)'),'4',4),(scale_id,numrange(85,101,'[)'),'5',5);
+      (scale_id,numrange(0,40,'[)'),'2',0),(scale_id,numrange(40,65,'[)'),'3',1),
+      (scale_id,numrange(65,85,'[)'),'4',3),(scale_id,numrange(85,101,'[)'),'5',4);
   ELSE
     INSERT INTO public.grading_bands(scale_id,score_range,letter_grade,grade_points) VALUES
       (scale_id,numrange(0,50,'[)'),'F',0),(scale_id,numrange(50,55,'[)'),'D',1),
