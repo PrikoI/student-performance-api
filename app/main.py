@@ -462,6 +462,13 @@ def deterministic_actions(message,data):
             name=" ".join(name.strip(" .,:;").split())
             if name and len(name)<=100:
                 subjects.append({"course_name":name,"current_grade":float(grade)})
+        count_marker=text.find("всего уроков")
+        count_segment=message[count_marker:] if count_marker>=0 else ""
+        for subject in subjects:
+            count_match=re.search(re.escape(subject["course_name"])+r"\s*[—-]\s*(\d+(?:[.,]\d+)?)",count_segment,re.I)
+            if count_match:
+                value=float(count_match.group(1).replace(",","."))
+                subject["workload_value"]=value;subject["workload_unit"]="lessons";subject["lessons_held"]=int(value) if value.is_integer() else value
         school=re.search(r"школа\s*:\s*([^\n.]+)",text)
         class_match=re.search(r"класс\s*:\s*([^\n.]+)",text)
         setup={"calendar_type":"quarter","institution_name":school.group(1).strip() if school else "Школа","program_name":((class_match.group(1).strip()+" класс") if class_match else "9 класс"),"education_level":"school","duration_years":1,"periods_per_year":4,"start_year":int(profile.group(1))}
