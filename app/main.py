@@ -280,6 +280,12 @@ async def course(body:Course,me=Depends(identity)):
 @app.post("/academic/subjects")
 async def create_subject(body:Record,me=Depends(identity)):
     return await rpc("create_subject_record",{"p_session_token":me["token"],"p_data":body.data})
+@app.post("/academic/subjects/batch")
+async def create_subjects_batch(body:Record,me=Depends(identity)):
+    subjects=body.data.get("subjects")
+    if not isinstance(subjects,list) or not 1<=len(subjects)<=50:
+        raise HTTPException(422,"Add between 1 and 50 subjects")
+    return await rpc("create_subject_records_atomic",{"p_session_token":me["token"],"p_subjects":subjects})
 @app.post("/academic/setup")
 async def setup_academics(body:AcademicSetup,me=Depends(identity)):
     return await rpc("setup_academic_program",{"p_session_token":me["token"],"p_data":body.model_dump(exclude_none=True)})
