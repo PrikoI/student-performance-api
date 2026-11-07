@@ -413,11 +413,16 @@ def deterministic_actions(message,data):
         import re
         match=re.search(pattern,text)
         if match:found.append((match.start(),action))
-    credits=sum(float(r.get("credits") or 0) for r in rows)
+    loads={}
+    for r in rows:
+        unit=r.get("workload_unit") or "credits";value=r.get("workload_value") if r.get("workload_value") is not None else r.get("credits")
+        if value is not None:loads[unit]=loads.get(unit,0)+float(value)
+    unit_names={"credits":"кредитов","academic_hours":"академических часов","lessons":"уроков"}
+    load_text=", ".join(f"{value:g} {unit_names.get(unit,unit)}" for unit,value in loads.items()) or "нагрузка не указана"
     complete=[r for r in rows if r.get("current_grade") is not None and float(r.get("credits") or 0)>0]
     weight=sum(float(r["credits"]) for r in complete)
     average=sum(float(r["current_grade"])*float(r["credits"]) for r in complete)/weight if weight else None
-    add(r"кредит|credit",{"operation":"answer","text":f"В текущем периоде: {credits:g} кредитов по {len(rows)} предметам."})
+    add(r"кредит|нагруз|час|урок|credit|workload",{"operation":"answer","text":f"Учебная нагрузка текущего периода: {load_text}. Предметов: {len(rows)}."})
     add(r"средн|балл|average",{"operation":"answer","text":f"Средний балл за текущий период: {average:.1f}. Учтено предметов: {len(complete)}." if average is not None else "Недостаточно оценок и кредитов для среднего балла."})
     attendance=[]
     for row in rows:
