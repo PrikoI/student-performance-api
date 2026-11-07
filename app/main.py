@@ -452,7 +452,7 @@ def deterministic_actions(message,data):
                             if token in stop:continue
                             stem=token
                             for suffix in suffixes:
-                                if stem.endswith(suffix) and len(stem)-len(suffix)>=4:
+                                if stem.endswith(suffix) and len(stem)-len(suffix)>=3:
                                     stem=stem[:-len(suffix)];break
                             result.add(stem)
                         return result
