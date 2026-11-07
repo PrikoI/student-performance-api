@@ -425,6 +425,21 @@ def deterministic_actions(message,data):
     import re
     text=message.casefold()
     profile=re.search(r"учебн(?:ый|ого)\s+год\s*:\s*(20\d{2})\s*[–-]\s*(20\d{2})",text)
+    if "предыдущий черновик данных:" in text:
+        try:
+            import json as _json
+            raw=message.split("Предыдущий черновик данных:",1)[1].split("Ответ пользователя на уточнение:",1)[0].strip()
+            ctx=_json.loads(raw)
+            draft=((ctx.get("actions") or [{}])[0].get("draft") or {})
+            answer=message.split("Ответ пользователя на уточнение:",1)[-1].casefold()
+            match=re.search(r"(\d+(?:[.,]\d+)?)\s*(кредит|кред|урок|час)",answer)
+            if match and draft.get("subjects"):
+                unit="credits" if "кредит" in match.group(2) else ("lessons" if "урок" in match.group(2) else "academic_hours")
+                return [{"operation":"import_profile","data":{"setup":draft.get("setup",{}),"subjects":draft["subjects"],"common_workload":{"value":float(match.group(1).replace(",",".")),"unit":unit}}}]
+            if "пропустить нагрузку" in answer and draft.get("subjects"):
+                return [{"operation":"import_profile","data":{"setup":draft.get("setup",{}),"subjects":draft["subjects"],"common_workload":{"value":1,"unit":"credits"}}}]
+        except (ValueError,TypeError,KeyError,IndexError):
+            pass
     marker=text.find("итоговые оценки")
     if profile and marker >= 0:
         segment=message[marker:]
