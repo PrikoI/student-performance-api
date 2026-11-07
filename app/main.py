@@ -424,18 +424,18 @@ def deterministic_actions(message,data):
     """Handle common reads and complete education-profile imports locally."""
     import re
     text=message.casefold()
-    profile=re.search(r"учебн(?:ый|ого)\s+год\s*:\s*(20\\d{2})\s*[–-]\\s*(20\\d{2})",text)
+    profile=re.search(r"учебн(?:ый|ого)\s+год\s*:\s*(20\d{2})\s*[–-]\s*(20\d{2})",text)
     marker=text.find("итоговые оценки")
     if profile and marker >= 0:
         segment=message[marker:]
-        pairs=re.findall(r"([А-Яа-яЁёҚқҒғІіҢңӨөҰұҮүҺһӘәA-Za-z][^—\\-\\n]*?)\s*[—-]\s*([45])(?=\\s|$)",segment)
+        pairs=re.findall(r"([А-Яа-яЁёҚқҒғІіҢңӨөҰұҮүҺһӘәA-Za-z][^—\-\n]*?)\s*[—-]\s*([45])(?=\s|$)",segment)
         subjects=[]
         for name,grade in pairs:
             name=" ".join(name.strip(" .,:;").split())
             if name and len(name)<=100:
                 subjects.append({"course_name":name,"grade_text":grade,"current_grade":95 if grade=="5" else 75})
-        school=re.search(r"школа\s*:\s*([^\\n.]+)",text)
-        class_match=re.search(r"класс\s*:\s*([^\\n.]+)",text)
+        school=re.search(r"школа\s*:\s*([^\n.]+)",text)
+        class_match=re.search(r"класс\s*:\s*([^\n.]+)",text)
         setup={"calendar_type":"quarter","institution_name":school.group(1).strip() if school else "Школа","program_name":((class_match.group(1).strip()+" класс") if class_match else "9 класс"),"education_level":"school","duration_years":1,"periods_per_year":4,"start_year":int(profile.group(1))}
         if len(subjects)>=2:
             return [{"operation":"import_profile","data":{"setup":setup,"subjects":subjects}}]
