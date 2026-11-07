@@ -94,6 +94,14 @@ class Batch(Strict):
     records:list[BatchItem]=Field(min_length=1,max_length=100)
 class Course(Strict):
     name:str=Field(min_length=1,max_length=100)
+class AcademicSetup(Strict):
+    calendar_type:Literal["trimester","semester","quarter"]
+    institution_name:str=Field(min_length=1,max_length=150)
+    program_name:str|None=Field(default=None,max_length=150)
+    education_level:str|None=Field(default=None,max_length=30)
+    duration_years:int=Field(ge=1,le=20)
+    periods_per_year:int=Field(ge=1,le=12)
+    start_year:int=Field(ge=1950,le=2200)
 class Prediction(Strict):
     period_id:int
     level:Literal["period","year","program"]="period"
@@ -192,6 +200,9 @@ async def course(body:Course,me=Depends(identity)):
 @app.post("/academic/subjects")
 async def create_subject(body:Record,me=Depends(identity)):
     return await rpc("create_subject_record",{"p_session_token":me["token"],"p_data":body.data})
+@app.post("/academic/setup")
+async def setup_academics(body:AcademicSetup,me=Depends(identity)):
+    return await rpc("setup_academic_program",{"p_session_token":me["token"],"p_data":body.model_dump(exclude_none=True)})
 @app.get("/admin/tables/{entity}")
 async def admin_read(entity:str,q:str="",student_id:int|None=None,offset:int=0,limit:int=50,me=Depends(administrator)):
     return await rpc("api_admin_search",{"p_token":me["token"],"p_entity":entity,"p_query":q[:200],"p_student_id":student_id,"p_offset":max(0,offset),"p_limit":min(100,max(1,limit))})
