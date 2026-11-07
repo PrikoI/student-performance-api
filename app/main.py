@@ -553,6 +553,9 @@ def prepared_action(action,data):
             if not owned_id(data,"academic_periods","period_id",period):a["data"]["period_id"]=current_period_id(data)
             course_id=a["data"].get("course_id")
             if not owned_id(data,"courses","course_id",course_id):raise ValueError("Choose an existing course or use create_subject")
+            if a["data"].get("current_grade") is not None:a["data"].pop("grade_text",None)
+            existing=next((row for row in data.get("academic_performance",[]) if _same_id(row.get("period_id"),a["data"]["period_id"]) and _same_id(row.get("course_id"),course_id)),None)
+            if existing:a["data"]["performance_id"]=existing["performance_id"]
     elif op=="create_subject":
         fields=a.get("data")
         if not isinstance(fields,dict):raise ValueError("Subject data is missing")
