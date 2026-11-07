@@ -420,9 +420,24 @@ Writes require user confirmation in the application.'''
     return actions
 
 def deterministic_actions(message,data):
-    """Handle common reads and simple incomplete writes without spending an AI request."""
+    """Handle common reads and complete education-profile imports locally."""
     import re
     text=message.casefold()
+    profile=re.search(r"учебн(?:ый|ого)\s+год\s*:\s*(20\\d{2})\s*[–-]\\s*(20\\d{2})",text)
+    marker=text.find("итоговые оценки")
+    if profile and marker >= 0:
+        segment=message[marker:]
+        pairs=re.findall(r"([А-Яа-яЁёҚқҒғІіҢңӨөҰұҮүҺһӘәA-Za-z][^—\\-\\n]*?)\s*[—-]\s*([45])(?=\\s|$)",segment)
+        subjects=[]
+        for name,grade in pairs:
+            name=" ".join(name.strip(" .,:;").split())
+            if name and len(name)<=100:
+                subjects.append({"course_name":name,"grade_text":grade,"current_grade":95 if grade=="5" else 75})
+        school=re.search(r"школа\s*:\s*([^\\n.]+)",text)
+        class_match=re.search(r"класс\s*:\s*([^\\n.]+)",text)
+        setup={"calendar_type":"quarter","institution_name":school.group(1).strip() if school else "Школа","program_name":((class_match.group(1).strip()+" класс") if class_match else "9 класс"),"education_level":"school","duration_years":1,"periods_per_year":4,"start_year":int(profile.group(1))}
+        if len(subjects)>=2:
+            return [{"operation":"import_profile","data":{"setup":setup,"subjects":subjects}}]
     write_request=any(x in text for x in ("добав", "измени", "заполни", "удали", "сохрани", "создай", "update", "add ", "delete", "save"))
     if write_request:
         match=re.search(r"(?:добавь|добавить|создай|создать)\s+(.+?)\s+предмет",text)
@@ -484,7 +499,7 @@ AI_WRITE_ENTITIES={
     "lesson_attendance","assessment_components","assessments","assessment_results","actual_results",
     "grading_scales"
 }
-AI_MUTATIONS={"write","create_subject"}
+AI_MUTATIONS={"write","create_subject","import_profile"}
 
 def _same_id(left,right):
     try:return int(left)==int(right)
@@ -546,6 +561,27 @@ def prepared_action(action,data):
         period=fields.get("period_id")
         clean["period_id"]=period if owned_id(data,"academic_periods","period_id",period) else current_period_id(data)
         a["data"]=clean
+    elif op=="import_profile":
+        fields=a.get("data")
+        if not isinstance(fields,dict):raise ValueError("Данные профиля отсутствуют")
+        setup=dict(fields.get("setup") or {})
+        subjects=fields.get("subjects") or []
+        if not isinstance(subjects,list) or not subjects:raise ValueError("Не найден ни один предмет")
+        common=fields.get("common_workload")
+        if common is None:
+            return {"operation":"clarify","questions":["Профиль распознан: школа, учебный год, 4 четверти и предметные оценки. Какую общую нагрузку применить к предметам? Например: «по 1 кредиту каждому» или «по 2 урока каждому». Также можно ответить «пропустить нагрузку»."],"draft":{"setup":setup,"subjects":subjects}}
+        value=common.get("value") if isinstance(common,dict) else common
+        unit=common.get("unit","credits") if isinstance(common,dict) else fields.get("workload_unit","credits")
+        if str(value).casefold() in ("пропустить","skip","нет"): value=1; unit="credits"
+        try:value=float(value)
+        except (TypeError,ValueError):raise ValueError("Укажите числовую нагрузку")
+        if value<=0 or unit not in ("credits","academic_hours","lessons"):raise ValueError("Нагрузка должна быть положительной и иметь корректную единицу")
+        clean_subjects=[]
+        for item in subjects:
+            item=dict(item); item["workload_value"]=value; item["workload_unit"]=unit
+            if unit=="credits":item["credits"]=value
+            clean_subjects.append(item)
+        a["data"]={"setup":setup,"subjects":clean_subjects}
     elif op=="predict":
         level=a.get("level","period")
         if level not in ("period","year","program"):raise ValueError("Unknown prediction level")
@@ -561,6 +597,16 @@ def prepared_action(action,data):
 
 async def create_subject_record(fields,me,data):
     return await rpc("create_subject_record",{"p_session_token":me["token"],"p_data":{**fields,"entry_method":"ai_assisted"}})
+async def import_profile(fields,me,data):
+    setup=fields["setup"]
+    if not data.get("academic_periods"):
+        await rpc("setup_academic_program",{"p_session_token":me["token"],"p_data":setup})
+    latest=await all_data(me)
+    period=current_period_id(latest)
+    results=[]
+    for item in fields["subjects"]:
+        results.append(await create_subject_record({**item,"period_id":period},me,latest))
+    return {"period_id":period,"created":len(results),"subjects":results}
 
 async def execute_actions(actions,me,confirmed):
         results=[]
@@ -590,6 +636,9 @@ async def execute_actions(actions,me,confirmed):
                 elif op=="create_subject":
                     if not confirmed:result={"status":"confirmation_required","proposed_action":a}
                     else:result=await create_subject_record(a["data"],me,data)
+                elif op=="import_profile":
+                    if not confirmed:result={"status":"confirmation_required","proposed_action":a}
+                    else:result=await import_profile(a["data"],me,data)
                 elif op=="answer":result={"text":str(a.get("text",""))[:6000]}
                 else:raise ValueError("Unsupported operation")
                 results.append({"index":index,"operation":op,"status":"ok","result":result})
