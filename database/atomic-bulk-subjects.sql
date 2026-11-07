@@ -21,7 +21,7 @@ END $$;
 
 CREATE OR REPLACE FUNCTION public.create_subject_records_atomic(p_session_token text, p_subjects jsonb)
 RETURNS jsonb
-LANGUAGE sql SECURITY INVOKER SET search_path='' AS $$
+LANGUAGE sql SECURITY DEFINER SET search_path='' AS $
   SELECT private.create_subject_records_atomic(p_session_token, p_subjects)
 $$;
 
