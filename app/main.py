@@ -377,9 +377,9 @@ async def plan_actions(message,data,c):
     try:key=cipher().decrypt(c["encrypted_key"].encode()).decode()
     except InvalidToken:raise HTTPException(503,"AI key could not be decrypted")
     # Never send names/emails, secrets, session tokens, or admin-wide data to a model.
-    context={k:v for k,v in data.items() if k not in ("students",)}
+    context={k:v for k,v in data.items() if k in ("academic_settings","academic_years","academic_periods","courses","academic_performance","grading_scales","grading_bands")}
     context_text=json.dumps(context,ensure_ascii=False)
-    if len(context_text)>50000:raise HTTPException(413,"Choose a smaller academic context; data exceeds AI budget")
+    if len(context_text)>18000:raise HTTPException(413,"Слишком большой учебный контекст для ИИ. Используйте один период или локальный режим.")
     prompt='''Return only JSON {"actions":[...]}. Preserve ALL requests in order, at most 5 actions.
 Allowed action objects:
 {"operation":"read","entity":"academic_performance","query":""}
@@ -400,7 +400,7 @@ Writes require user confirmation in the application.'''
             if urlparse(base_url).hostname=="openrouter.ai":headers|={"HTTP-Referer":"https://student-performance-api-ee1k.onrender.com","X-Title":"Student Performance"}
             request_body={"model":c["model"],"messages":[{"role":"system","content":prompt},
                 {"role":"user","content":json.dumps({"request":message,"academic_records":json.loads(context_text)},ensure_ascii=False)}],
-                "max_tokens":1200,"temperature":0,"response_format":{"type":"json_object"}}
+                "max_tokens":700,"temperature":0,"response_format":{"type":"json_object"}}
             r=await client.post(base_url+"/chat/completions",headers=headers,json=request_body)
             if r.status_code in (400,422) and "response_format" in safe_provider_error(r).casefold():
                 request_body.pop("response_format",None)
@@ -408,7 +408,8 @@ Writes require user confirmation in the application.'''
             r.raise_for_status()
             plan=parse_ai_plan(r.json())
     except httpx.HTTPStatusError as e:
-        if e.response.status_code==402:raise HTTPException(502,"OpenRouter balance is too low for this model. The response limit was reduced; retry or choose a cheaper model if the error continues.")
+        if e.response.status_code==402:raise HTTPException(502,"Недостаточно средств OpenRouter для выбранной модели. Выберите более дешёвую модель, например openai/gpt-4o-mini, или используйте режим без ИИ.")
+        if e.response.status_code==404:raise HTTPException(502,f"Модель или адрес AI-провайдера не найдены (404). Проверьте base URL и model в /admin; для OpenRouter используйте https://openrouter.ai/api/v1 и модель openai/gpt-4o-mini.")
         raise HTTPException(502,f"AI provider returned {e.response.status_code}: {safe_provider_error(e.response)}")
     except httpx.HTTPError as e:raise HTTPException(502,f"Could not reach AI provider: {type(e).__name__}")
     except (KeyError,ValueError,TypeError,json.JSONDecodeError):raise HTTPException(502,"AI returned an invalid action plan. Choose a model with JSON output support or retry.")
@@ -478,15 +479,21 @@ AI_WRITE_ENTITIES={
 }
 AI_MUTATIONS={"write","create_subject"}
 
+def _same_id(left,right):
+    try:return int(left)==int(right)
+    except (TypeError,ValueError):return left==right
+
 def current_period_id(data):
     periods=data.get("academic_periods") or []
-    if not periods:raise HTTPException(422,"Create an academic period before using this action")
-    active=[p for p in periods if p.get("status")=="active"]
+    if not periods:raise HTTPException(422,"Сначала создайте учебную программу и активный учебный период")
+    active=[p for p in periods if str(p.get("status")).casefold()=="active"]
     chosen=(active or periods)[0]
-    return chosen.get("period_id")
+    period_id=chosen.get("period_id")
+    if period_id is None:raise HTTPException(422,"У текущего учебного периода отсутствует идентификатор")
+    return int(period_id)
 
 def owned_id(data,entity,key,value):
-    return value is not None and any(row.get(key)==value for row in data.get(entity,[]))
+    return value is not None and any(_same_id(row.get(key),value) for row in data.get(entity,[]))
 
 def prepared_action(action,data):
     if not isinstance(action,dict):raise ValueError("AI action must be an object")
