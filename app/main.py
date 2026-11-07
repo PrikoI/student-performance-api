@@ -6,7 +6,6 @@ import math
 import os
 import re
 import socket
-import secrets
 import time
 from collections import defaultdict, deque
 from typing import Any, Literal
@@ -95,13 +94,6 @@ class RegistrationStart(Strict):
     username:str=Field(min_length=3,max_length=30)
     password:SecretStr
     full_name:str=Field(min_length=1,max_length=100)
-class VerifyCode(Strict):
-    challenge_id:str=Field(max_length=80)
-    code:str=Field(min_length=6,max_length=6)
-class ResetStart(Strict):
-    identifier:str=Field(min_length=1,max_length=100)
-class ResetComplete(VerifyCode):
-    new_password:SecretStr
 class Record(Strict):
     data:dict[str,Any]
 class BatchItem(Strict):
@@ -162,49 +154,6 @@ def auth_secret():
     if not value:raise HTTPException(503,"Registration service is not configured")
     return value
 
-async def send_resend_email(email,subject,html,idempotency_key):
-    key=os.getenv("RESEND_API_KEY")
-    if not key:raise HTTPException(503,"Email delivery is not configured yet. Add RESEND_API_KEY in Render.")
-    headers={"Authorization":"Bearer "+key,"Content-Type":"application/json","Idempotency-Key":str(idempotency_key)[:256]}
-    payload={"from":os.getenv("MAIL_FROM","Perfecta <onboarding@resend.dev>"),"to":[email],"subject":subject,"html":html}
-    async with httpx.AsyncClient(timeout=20,follow_redirects=False) as client:
-        for attempt in range(3):
-            try:response=await client.post("https://api.resend.com/emails",headers=headers,json=payload)
-            except (httpx.TimeoutException,httpx.NetworkError):
-                if attempt==2:raise HTTPException(502,"Почтовый сервис временно недоступен")
-                await asyncio.sleep(2**attempt);continue
-            if not response.is_error:return response.json().get("id")
-            if response.status_code not in (429,500,502,503,504) or attempt==2:break
-            retry_after=response.headers.get("retry-after")
-            await asyncio.sleep(min(10,float(retry_after)) if retry_after and retry_after.replace(".","",1).isdigit() else 2**attempt)
-    try:
-        provider_error=response.json()
-        provider_message=str(provider_error.get("message",""))
-    except (ValueError,AttributeError):
-        provider_message=""
-    normalized_error=provider_message.casefold()
-    if any(marker in normalized_error for marker in (
-        "testing emails","own email address","verify a domain","domain is not verified",
-        "domain not found","sender domain",
-    )):
-        raise HTTPException(
-            503,
-            "Письмо не отправлено: тестовый адрес onboarding@resend.dev может писать только владельцу аккаунта Resend. "
-            "Чтобы восстанавливать пароль на любых адресах, добавьте и подтвердите собственный домен в Resend, "
-            "затем укажите MAIL_FROM с этим доменом в Render."
-        )
-    if response.status_code==429:
-        raise HTTPException(429,"Лимит отправки писем временно исчерпан. Попробуйте позже.")
-    if response.status_code in (401,403):
-        raise HTTPException(503,"Resend отклонил авторизацию или адрес отправителя. Проверьте RESEND_API_KEY и MAIL_FROM.")
-    raise HTTPException(502,"Почтовый сервис отклонил письмо. Проверьте адрес получателя и настройки Resend.")
-
-async def send_auth_email(email,code,purpose,challenge_id):
-    title="Подтверждение регистрации" if purpose=="registration" else "Сброс пароля"
-    action="завершения регистрации" if purpose=="registration" else "сброса пароля"
-    html=f"<h2>{title}</h2><p>Код для {action}:</p><p style='font-size:28px;font-weight:700;letter-spacing:6px'>{code}</p><p>Код действует 10 минут. Если запрос делали не вы, проигнорируйте письмо.</p>"
-    return await send_resend_email(email,title,html,f"{purpose}-{challenge_id}")
-
 @app.get("/auth/username")
 async def username_status(username:str):
     return await rpc("username_status",{"p_username":username})
@@ -218,16 +167,13 @@ async def register_start(body:RegistrationStart,request:Request):
     if "@" not in body.email or "." not in body.email.rsplit("@",1)[-1]:raise HTTPException(422,"Введите корректный email")
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{2,29}",body.username):raise HTTPException(422,"Логин: 3–30 латинских букв, цифр или _. Первый символ — буква.")
     if len(password)<8 or len(password.encode())>72:raise HTTPException(422,"Пароль должен занимать 8–72 UTF-8 байта")
-    code=f"{secrets.randbelow(1000000):06d}"
-    result=await rpc("begin_registration",{"p_secret":auth_secret(),"p_email":body.email.strip().lower(),"p_username":body.username.strip(),"p_password":password,"p_full_name":body.full_name.strip(),"p_code_hash":hashlib.sha256(code.encode()).hexdigest()})
-    await send_auth_email(result["email"],code,"registration",result["challenge_id"])
-    return {"verification_required":True,"challenge_id":result["challenge_id"],"expires_in":600}
-
-@app.post("/auth/register/verify")
-async def register_verify(body:VerifyCode,request:Request):
-    throttle("verify:"+request.client.host,12,600)
-    if not body.code.isdigit():raise HTTPException(422,"Введите шестизначный код")
-    return await rpc("verify_registration",{"p_secret":auth_secret(),"p_challenge_id":body.challenge_id,"p_code":body.code})
+    return await rpc("register_without_email_verification",{
+        "p_secret":auth_secret(),
+        "p_email":body.email.strip().lower(),
+        "p_username":body.username.strip(),
+        "p_password":password,
+        "p_full_name":body.full_name.strip(),
+    })
 
 @app.post("/auth/login")
 async def login(body:Login,request:Request):
@@ -237,24 +183,6 @@ async def login(body:Login,request:Request):
     if len(body.password.get_secret_value().encode())>72:raise HTTPException(422,"Password must fit 72 UTF-8 bytes")
     return await rpc("login_student",{"p_email":identifier,"p_password":body.password.get_secret_value()})
 
-@app.post("/auth/password-reset/start")
-async def password_reset_start(body:ResetStart,request:Request):
-    throttle("reset-ip:"+request.client.host,5,3600)
-    throttle("reset-id:"+hashlib.sha256(body.identifier.strip().encode()).hexdigest(),3,600)
-    code=f"{secrets.randbelow(1000000):06d}"
-    result=await rpc("begin_password_reset",{"p_secret":auth_secret(),"p_identifier":body.identifier.strip(),"p_code_hash":hashlib.sha256(code.encode()).hexdigest()})
-    if result.get("should_send"):
-        await send_auth_email(result["email"],code,"password_reset",result["challenge_id"])
-        return {"accepted":True,"challenge_id":result["challenge_id"],"expires_in":600}
-    return {"accepted":True,"challenge_id":None}
-
-@app.post("/auth/password-reset/complete")
-async def password_reset_complete(body:ResetComplete,request:Request):
-    throttle("reset-complete:"+request.client.host,12,600)
-    password=body.new_password.get_secret_value()
-    if not body.code.isdigit():raise HTTPException(422,"Введите шестизначный код")
-    if len(password)<8 or len(password.encode())>72:raise HTTPException(422,"Пароль должен занимать 8–72 UTF-8 байта")
-    return await rpc("complete_password_reset",{"p_secret":auth_secret(),"p_challenge_id":body.challenge_id,"p_code":body.code,"p_new_password":password})
 @app.post("/auth/logout")
 async def logout(me=Depends(identity)):
     await rpc("logout_student",{"p_session_token":me["token"]});return {"logged_out":True}
@@ -263,15 +191,7 @@ async def delete_account(body:Delete,me=Depends(identity)):
     if not body.confirm:raise HTTPException(409,"Подтвердите удаление аккаунта")
     if me.get("role")=="admin":raise HTTPException(403,"Администраторский аккаунт нельзя удалить через приложение")
     deleted=await rpc("delete_own_account",{"p_token":me["token"]})
-    email=deleted.get("email"); student_id=deleted.get("student_id")
-    notification_sent=False
-    if os.getenv("RESEND_API_KEY") and email:
-        html="<h2>Аккаунт Perfecta удалён</h2><p>Ваш профиль и связанные академические данные были удалены.</p><p><a href='https://student-performance-api-ee1k.onrender.com/'>Перейти на Perfecta</a></p>"
-        try:
-            await send_resend_email(email,"Аккаунт Perfecta удалён",html,f"account-deleted-{student_id}")
-            notification_sent=True
-        except HTTPException:pass
-    return {"deleted":True,"notification_sent":notification_sent}
+    return {"deleted":True,"student_id":deleted.get("student_id")}
 @app.get("/me")
 async def profile(me=Depends(identity)):return {k:v for k,v in me.items() if k!="token"}
 @app.get("/data")
