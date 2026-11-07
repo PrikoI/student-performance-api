@@ -54,9 +54,16 @@ async def rpc(name,body):
             r=await client.post(url+"/rest/v1/rpc/"+name,headers={"apikey":key},json=body)
     except httpx.HTTPError:raise HTTPException(503,"Database unavailable")
     if r.is_error:
-        code=r.json().get("code","") if r.headers.get("content-type","").startswith("application/json") else ""
+        payload=r.json() if r.headers.get("content-type","").startswith("application/json") else {}
+        code=payload.get("code","")
+        friendly={
+            "23505":"This subject already has a result for the selected period",
+            "23503":"The selected period or subject does not belong to this account",
+            "23514":"Check grades, credits, attendance and lesson counts",
+            "22P02":"One of the entered values has the wrong format",
+        }.get(code)
         raise HTTPException(401 if code=="28000" else 409 if code in ("23505","23503") else 400,
-                            "Session invalid" if code=="28000" else "Database rejected request; check fields, ownership and referenced records")
+                            "Session invalid" if code=="28000" else friendly or "Database rejected request; check fields, ownership and referenced records")
     return r.json() if r.content else None
 
 async def identity(credentials:HTTPAuthorizationCredentials|None=Depends(security)):
@@ -180,6 +187,9 @@ async def batch(body:Batch,me=Depends(identity)):
 @app.post("/courses")
 async def course(body:Course,me=Depends(identity)):
     return {"course_id":await rpc("add_student_course",{"p_session_token":me["token"],"p_name":body.name})}
+@app.post("/academic/subjects")
+async def create_subject(body:Record,me=Depends(identity)):
+    return await rpc("create_subject_record",{"p_session_token":me["token"],"p_data":body.data})
 @app.get("/admin/tables/{entity}")
 async def admin_read(entity:str,q:str="",student_id:int|None=None,offset:int=0,limit:int=50,me=Depends(administrator)):
     return await rpc("api_admin_search",{"p_token":me["token"],"p_entity":entity,"p_query":q[:200],"p_student_id":student_id,"p_offset":max(0,offset),"p_limit":min(100,max(1,limit))})
@@ -264,7 +274,7 @@ async def calculator(body:Calculation,me=Depends(identity)):
         for r in data["academic_performance"]:
             if r["period_id"] in period_ids:
                 final=actual.get(r["performance_id"],{}).get("final_grade")
-                x={"grade":final if final is not None else r["current_grade"],"credits":r["credits"],"course_id":r["course_id"]}
+                x={"grade":final if final is not None else r["current_grade"],"credits":r.get("credits"),"workload_value":r.get("workload_value") or r.get("credits"),"workload_unit":r.get("workload_unit") or "credits","course_id":r["course_id"]}
                 x.update(body.overrides.get(r["performance_id"],{}));items.append(x)
         # Explicit extra manual rows are allowed alongside the saved rows.
         items+=body.items
@@ -273,10 +283,11 @@ async def calculator(body:Calculation,me=Depends(identity)):
         if body.mode=="attendance":
             held=sum(float(x["lessons_held"]) for x in items if x.get("lessons_held") is not None)
             attended=sum(float(x["lessons_attended"]) for x in items if x.get("lessons_attended") is not None)
-            if held<=0 or attended<0 or attended>held:raise ValueError("Valid held and attended lesson counts are required")
-            return {"calendar":body.calendar,"mode":body.mode,"attendance":round(attended/held*100,4),"held":held,"attended":attended,"saved":False}
+            excused=sum(float(x.get("lessons_excused") or 0) for x in items)
+            if held<=0 or attended<0 or excused<0 or attended+excused>held:raise ValueError("Valid held, attended and excused lesson counts are required")
+            return {"calendar":body.calendar,"mode":body.mode,"attendance":round((attended+excused)/held*100,4),"physical_attendance":round(attended/held*100,4),"held":held,"attended":attended,"excused":excused,"saved":False}
         if not items:raise ValueError("Add at least one complete row")
-        if high<=low or any(x.get("grade") is None or x.get("credits") is None or float(x["credits"])<=0 or not low<=float(x["grade"])<=high for x in items):raise ValueError("Every row needs a valid grade and positive credits; empty fields are not zero")
+        if high<=low or any(x.get("grade") is None or (x.get("credits") is None and x.get("workload_value") is None) or float(x.get("credits") if x.get("credits") is not None else x["workload_value"])<=0 or not low<=float(x["grade"])<=high for x in items):raise ValueError("Every row needs a valid grade and positive workload; empty fields are not zero")
         result=calculate(items,bands)
         if body.mode in ("gpa","course") and result["gpa"] is None:raise ValueError("A complete GPA scale is required")
         if body.mode=="course" and len(items)!=1:raise ValueError("Course mode accepts exactly one discipline")
@@ -388,11 +399,49 @@ Writes require user confirmation in the application.'''
     if not isinstance(actions,list) or not 1<=len(actions)<=5:raise HTTPException(422,"AI plan must contain 1–5 actions")
     return actions
 
+def deterministic_actions(message,data):
+    """Keep common read-only requests reliable; use the model for interpretation and writes."""
+    text=message.casefold()
+    if any(x in text for x in ("добав", "измени", "заполни", "удали", "сохрани", "создай", "update", "add ", "delete", "save")):
+        return None
+    periods=data.get("academic_periods") or []
+    active=next((p for p in periods if p.get("status")=="active"),periods[0] if periods else None)
+    rows=[r for r in data.get("academic_performance",[]) if not active or r.get("period_id")==active.get("period_id")]
+    courses={c.get("course_id"):c.get("course_name") for c in data.get("courses",[])}
+    found=[]
+    def add(pattern,action):
+        import re
+        match=re.search(pattern,text)
+        if match:found.append((match.start(),action))
+    credits=sum(float(r.get("credits") or 0) for r in rows)
+    complete=[r for r in rows if r.get("current_grade") is not None and float(r.get("credits") or 0)>0]
+    weight=sum(float(r["credits"]) for r in complete)
+    average=sum(float(r["current_grade"])*float(r["credits"]) for r in complete)/weight if weight else None
+    add(r"кредит|credit",{"operation":"answer","text":f"В текущем периоде: {credits:g} кредитов по {len(rows)} предметам."})
+    add(r"средн|балл|average",{"operation":"answer","text":f"Средний балл за текущий период: {average:.1f}. Учтено предметов: {len(complete)}." if average is not None else "Недостаточно оценок и кредитов для среднего балла."})
+    attendance=[]
+    for row in rows:
+        held=float(row.get("lessons_held") or 0);att=float(row.get("lessons_attended") or 0);exc=float(row.get("lessons_excused") or 0)
+        value=(att+exc)/held*100 if held else row.get("attendance")
+        if value is not None:attendance.append(f"{courses.get(row.get('course_id'),'Предмет')} — {float(value):g}%")
+    add(r"посещ|attendance",{"operation":"answer","text":"Посещаемость с учётом уважительных пропусков: "+", ".join(attendance) if attendance else "Для расчёта посещаемости недостаточно данных."})
+    subjects=[f"{courses.get(r.get('course_id'),'Предмет')} — {r.get('current_grade') if r.get('current_grade') is not None else 'без оценки'}" for r in rows]
+    add(r"предмет|курс|оценк|subject|course|grade",{"operation":"answer","text":"Предметы текущего периода: "+"; ".join(subjects) if subjects else "В текущем периоде нет предметов."})
+    add(r"прогноз|predict|forecast",{"operation":"predict","level":"period"})
+    if not found:return None
+    # De-duplicate overlapping intents while preserving the user's order.
+    out=[];seen=set()
+    for _,action in sorted(found,key=lambda x:x[0]):
+        key=(action["operation"],action.get("text"),action.get("level"))
+        if key not in seen:seen.add(key);out.append(action)
+    return out[:5]
+
 @app.post("/ai/chat")
 async def chat(body:Chat,me=Depends(identity)):
     throttle("ai:"+str(me["account_id"]),30,3600)
     async with asyncio.timeout(90):
-        actions=await plan_actions(body.message,await all_data(me),await config(me))
+        data=await all_data(me)
+        actions=deterministic_actions(body.message,data) or await plan_actions(body.message,data,await config(me))
         return await execute_actions(actions,me,False)
 
 AI_READ_ENTITIES={
@@ -438,9 +487,14 @@ def prepared_action(action,data):
         name=str(fields.get("course_name") or fields.get("name") or "").strip()
         if not name or len(name)>100:raise ValueError("A subject name of up to 100 characters is required")
         clean={"course_name":name}
-        for key in ("credits","current_grade","attendance","recent_assessment_score","lessons_planned","lessons_held","lessons_attended","lessons_excused","assignments_completed","assignments_total"):
+        for key in ("credits","workload_value","workload_unit","current_grade","attendance","recent_assessment_score","lessons_planned","lessons_held","lessons_attended","lessons_excused","assignments_completed","assignments_total"):
             if fields.get(key) is not None:clean[key]=fields[key]
-        if clean.get("credits") is None or float(clean["credits"])<=0:raise ValueError("Positive credits are required")
+        weight=clean.get("workload_value") if clean.get("workload_value") is not None else clean.get("credits")
+        if weight is None or float(weight)<=0:raise ValueError("Positive workload is required")
+        unit=clean.get("workload_unit") or "credits"
+        if unit not in ("credits","academic_hours","lessons"):raise ValueError("Unknown workload unit")
+        clean["workload_unit"]=unit;clean["workload_value"]=weight
+        if unit=="credits":clean["credits"]=weight
         for key in ("current_grade","attendance","recent_assessment_score"):
             if key in clean and not 0<=float(clean[key])<=100:raise ValueError(f"{key} must be between 0 and 100")
         if "lessons_held" in clean and "lessons_attended" in clean and float(clean["lessons_attended"])>float(clean["lessons_held"]):raise ValueError("Attended lessons cannot exceed held lessons")
@@ -461,11 +515,7 @@ def prepared_action(action,data):
     return a
 
 async def create_subject_record(fields,me,data):
-    existing=next((x for x in data.get("courses",[]) if str(x.get("course_name","")).casefold()==fields["course_name"].casefold()),None)
-    if existing:course_id=existing["course_id"]
-    else:course_id=(await course(Course(name=fields["course_name"]),me))["course_id"]
-    record={k:v for k,v in fields.items() if k!="course_name"}|{"course_id":course_id}
-    return await save("academic_performance",Record(data=record),me)
+    return await rpc("create_subject_record",{"p_session_token":me["token"],"p_data":{**fields,"entry_method":"ai_assisted"}})
 
 async def execute_actions(actions,me,confirmed):
         results=[]

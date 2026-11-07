@@ -2,6 +2,11 @@ import unittest
 from app.academics import calculate,forecast,grade_points
 
 class AcademicTests(unittest.TestCase):
+ def test_academic_hours_can_weight_average(self):
+  result=calculate([{"grade":80,"workload_value":30,"workload_unit":"academic_hours"},{"grade":100,"workload_value":10,"workload_unit":"academic_hours"}])
+  self.assertEqual(result["average"],85);self.assertEqual(result["workload_total"],40);self.assertEqual(result["workload_unit"],"academic_hours")
+ def test_mixed_workload_units_are_rejected(self):
+  with self.assertRaises(ValueError):calculate([{"grade":80,"workload_value":3,"workload_unit":"credits"},{"grade":90,"workload_value":45,"workload_unit":"academic_hours"}])
  def test_credit_weighted(self):
   self.assertEqual(calculate([{"grade":100,"credits":1},{"grade":50,"credits":3}])["average"],62.5)
  def test_missing_credit_not_silently_accepted(self):
@@ -31,4 +36,5 @@ class AcademicTests(unittest.TestCase):
    "academic_years":[{"year_id":1}],"grading_bands":[]}
 
 if __name__=="__main__":unittest.main()
+
 

@@ -4,8 +4,14 @@ import re
 from datetime import date
 from statistics import mean
 
+def item_weight(item):
+    if item.get("credits") is not None:return item["credits"]
+    if item.get("workload_value") is not None:return item["workload_value"]
+    if "credits" in item or "workload_value" in item:raise ValueError("Workload is required")
+    return 1
+
 def weighted(items):
-    valid = [(float(x["grade"]), float(x.get("credits", 1))) for x in items if x.get("grade") is not None]
+    valid = [(float(x["grade"]), float(item_weight(x))) for x in items if x.get("grade") is not None]
     if not valid or any(w <= 0 or not math.isfinite(g+w) for g,w in valid):
         raise ValueError("Positive weights and finite grades are required")
     return sum(g*w for g,w in valid)/sum(w for _,w in valid)
@@ -26,10 +32,13 @@ def grade_points(grade, bands):
 
 def calculate(items, bands=None):
     score=weighted(items)
-    points=[dict(grade=grade_points(float(x["grade"]), bands or []),credits=x.get("credits",1)) for x in items]
+    units={x.get("workload_unit","credits") for x in items}
+    if len(units)>1:raise ValueError("Different workload units require explicit conversion")
+    points=[dict(grade=grade_points(float(x["grade"]), bands or []),credits=item_weight(x)) for x in items]
     gpa=weighted(points) if points and all(x["grade"] is not None for x in points) else None
+    total=sum(float(item_weight(x)) for x in items)
     return {"average":round(score,4),"gpa":round(gpa,4) if gpa is not None else None,
-            "included_items":len(items),"credits":sum(float(x.get("credits",1)) for x in items),
+            "included_items":len(items),"credits":total if units=={"credits"} else None,"workload_total":total,"workload_unit":next(iter(units)),
             "gpa_note":None if gpa is not None else "No complete matching GPA conversion supplied"}
 
 def forecast(data, period_id, level="period"):
@@ -77,11 +86,12 @@ def forecast(data, period_id, level="period"):
         if r.get("attendance") is not None and float(r["attendance"])<75:signals.append("Attendance below illustrative 75% threshold")
         if r.get("assignments_total") and (r.get("assignments_completed") or 0)<r["assignments_total"]:signals.append("There are unfinished assignments")
         estimates.append({"performance_id":r["performance_id"],"course_id":r["course_id"],"grade":estimate,"signals":signals,
-                          "credits":r.get("credits"),"current_grade":current,"exams":exam})
+                          "credits":r.get("credits"),"workload_value":r.get("workload_value") or r.get("credits"),"workload_unit":r.get("workload_unit") or "credits","current_grade":current,"exams":exam})
     if not estimates: raise ValueError("Numeric current grades required")
-    if any(x["credits"] is None for x in estimates):
-        raise ValueError("Credits/weights required for every included subject")
-    selected=[dict(grade=x["grade"],credits=x["credits"]) for x in estimates]
+    if any(x["workload_value"] is None for x in estimates):
+        raise ValueError("Workload is required for every included subject")
+    if len({x["workload_unit"] for x in estimates})>1:raise ValueError("Different workload units require explicit conversion")
+    selected=[dict(grade=x["grade"],workload_value=x["workload_value"],workload_unit=x["workload_unit"]) for x in estimates]
     coverage={"current_subjects":len(estimates)}
     if level in ("year","program"):
         year=next(x for x in data["academic_years"] if x["year_id"]==period["year_id"])
@@ -102,8 +112,9 @@ def forecast(data, period_id, level="period"):
             s=next(x for x in data["academic_settings"] if x["settings_id"]==p["settings_id"])
             if (s["grade_min"],s["grade_max"],s["scale_id"]) != (settings["grade_min"],settings["grade_max"],settings["scale_id"]):
                 raise ValueError("Historical scale differs; explicit conversion required")
-            if r.get("credits") is None: raise ValueError("Historical credits required")
-            return {"grade":actual[r["performance_id"]]["final_grade"],"credits":r["credits"]}
+            value=r.get("workload_value") or r.get("credits");unit=r.get("workload_unit") or "credits"
+            if value is None: raise ValueError("Historical workload required")
+            return {"grade":actual[r["performance_id"]]["final_grade"],"workload_value":value,"workload_unit":unit}
         selected += [historical_item(r) for r in completed_records]
         if level=="program":
             program=next(x for x in data["study_programs"] if x["program_id"]==year["program_id"])
@@ -129,4 +140,5 @@ def forecast(data, period_id, level="period"):
             "limitations":["Not trained or validated on student outcomes","Not a guaranteed result",
                            "Year/program averages assume comparable future subject and credit distribution",
                            "No statistical confidence interval is claimed"]}
+
 
