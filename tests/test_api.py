@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
-from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, administrator, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start
+from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -27,6 +27,39 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   with patch("app.main.auth_secret",return_value="secret"),patch("app.main.rpc",AsyncMock(return_value=result)) as rpc:
    self.assertEqual(await register_start(body,request),result)
    rpc.assert_awaited_once_with("register_without_email_verification",{"p_secret":"secret","p_email":"new@example.com","p_username":"NewUser","p_password":"password123","p_full_name":"New User"})
+ async def test_password_settings_are_localized_and_email_recovery_is_absent(self):
+  html=application_page()
+  for marker in ("SECURITY_COPY","/account/password","verifyDeletionPassword","current_password:password"):self.assertIn(marker,html)
+  for removed in ('id="forgotAuth"','id="verificationCode"','/auth/password-reset/start'):self.assertNotIn(removed,html)
+ async def test_current_password_can_be_verified(self):
+  body=CurrentPassword(current_password="old-password")
+  with patch("app.main.rpc",AsyncMock(return_value={"valid":True})) as rpc:
+   self.assertEqual(await verify_account_password(body,STUDENT),{"valid":True})
+   rpc.assert_awaited_once_with("verify_own_password",{"p_token":"test","p_current_password":"old-password"})
+ async def test_password_change_passes_current_and_new_password(self):
+  body=PasswordChange(current_password="old-password",new_password="new-password")
+  with patch("app.main.rpc",AsyncMock(return_value={"changed":True})) as rpc:
+   self.assertTrue((await change_account_password(body,STUDENT))["changed"])
+   rpc.assert_awaited_once_with("change_own_password",{"p_token":"test","p_current_password":"old-password","p_new_password":"new-password"})
+ async def test_short_new_password_is_rejected_before_database(self):
+  body=PasswordChange(current_password="old-password",new_password="short")
+  with patch("app.main.rpc",AsyncMock()) as rpc:
+   with self.assertRaises(HTTPException) as ctx:await change_account_password(body,STUDENT)
+   self.assertEqual(ctx.exception.status_code,422);rpc.assert_not_awaited()
+ async def test_delete_requires_explicit_confirmation(self):
+  with patch("app.main.rpc",AsyncMock()) as rpc:
+   with self.assertRaises(HTTPException) as ctx:await delete_account(Delete(current_password="old-password",confirm=False),STUDENT)
+   self.assertEqual(ctx.exception.status_code,409);rpc.assert_not_awaited()
+ async def test_delete_passes_current_password_to_database(self):
+  with patch("app.main.rpc",AsyncMock(return_value={"deleted":True,"student_id":1})) as rpc:
+   result=await delete_account(Delete(current_password="old-password",confirm=True),STUDENT)
+   self.assertTrue(result["deleted"])
+   rpc.assert_awaited_once_with("delete_own_account",{"p_token":"test","p_current_password":"old-password"})
+ async def test_admin_cannot_delete_account(self):
+  admin={**STUDENT,"role":"admin"}
+  with patch("app.main.rpc",AsyncMock()) as rpc:
+   with self.assertRaises(HTTPException) as ctx:await delete_account(Delete(current_password="admin-password",confirm=True),admin)
+   self.assertEqual(ctx.exception.status_code,403);rpc.assert_not_awaited()
  async def test_manual_calculation(self):
   r=await calculator(Calculation(calendar="quarter",mode="average",items=[{"grade":80,"credits":1},{"grade":100,"credits":3}]),STUDENT);self.assertEqual(r["average"],95)
  async def test_empty_calculator_fields_are_not_zero(self):
