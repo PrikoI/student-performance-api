@@ -24,6 +24,18 @@ class AcademicTests(unittest.TestCase):
   r=forecast(d,1)
   self.assertEqual(r["average"],78)
   self.assertTrue(r["is_illustrative"])
+ def test_adaptive_forecast_uses_graded_work_and_reports_method(self):
+  d=self.data()
+  d["assessment_components"]=[{"component_id":1,"performance_id":1,"name":"Quiz","component_type":"quiz","weight_percent":40}]
+  d["assessments"]=[{"assessment_id":1,"component_id":1,"maximum_score":100,"due_at":"2026-01-01"},{"assessment_id":2,"component_id":1,"maximum_score":100,"due_at":"2026-02-01"}]
+  d["assessment_results"]=[{"assessment_id":1,"status":"graded","score":60},{"assessment_id":2,"status":"graded","score":90}]
+  r=forecast(d,1,method="adaptive")
+  self.assertEqual(r["method_version"],"adaptive-forecast-v1")
+  self.assertTrue(any("Adaptive data points" in x for x in r["subjects"][0]["signals"]))
+ def test_school_five_point_average_is_not_gpa(self):
+  r=calculate([{"grade":5,"workload_value":2,"workload_unit":"lessons"},{"grade":4,"workload_value":1,"workload_unit":"lessons"}])
+  self.assertEqual(r["average"],4.6667)
+  self.assertIsNone(r["gpa"])
  def test_year_requires_context(self):
   with self.assertRaises(ValueError):forecast(self.data(),1,"year")
  def test_future_and_closed_periods(self):
