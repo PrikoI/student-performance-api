@@ -296,8 +296,15 @@ async def admin_read(entity:str,q:str="",student_id:int|None=None,offset:int=0,l
 @app.get("/admin/analytics/comparable-gpa")
 async def comparable_gpa(calendar:str|None=None,scale_id:int|None=None,me=Depends(administrator)):
     async def items(entity):
-        result=await rpc("api_admin_search",{"p_token":me["token"],"p_entity":entity,"p_query":"","p_student_id":None,"p_offset":0,"p_limit":100})
-        return result.get("items",[])
+        collected=[]; offset=0
+        while True:
+            result=await rpc("api_admin_search",{"p_token":me["token"],"p_entity":entity,"p_query":"","p_student_id":None,"p_offset":offset,"p_limit":100})
+            page=result.get("items",[])
+            collected.extend(page)
+            if len(page)<100:break
+            offset+=len(page)
+            if offset>10000:raise HTTPException(422,"Analytics data set is too large")
+        return collected
     students,records,periods,settings,bands=await asyncio.gather(*[items(x) for x in ("students","academic_performance","academic_periods","academic_settings","grading_bands")])
     setting_by_id={x["settings_id"]:x for x in settings}; period_by_id={x["period_id"]:x for x in periods}
     eligible=[]
