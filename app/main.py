@@ -420,9 +420,14 @@ Writes require user confirmation in the application.'''
     return actions
 
 def deterministic_actions(message,data):
-    """Keep common read-only requests reliable; use the model for interpretation and writes."""
+    """Handle common reads and simple incomplete writes without spending an AI request."""
+    import re
     text=message.casefold()
-    if any(x in text for x in ("добав", "измени", "заполни", "удали", "сохрани", "создай", "update", "add ", "delete", "save")):
+    write_request=any(x in text for x in ("добав", "измени", "заполни", "удали", "сохрани", "создай", "update", "add ", "delete", "save"))
+    if write_request:
+        match=re.search(r"(?:добавь|добавить|создай|создать)\\s+(.+?)\\s+предмет",text)
+        if match:
+            return [{"operation":"create_subject","data":{"course_name":match.group(1).strip()}}]
         return None
     periods=data.get("academic_periods") or []
     active=next((p for p in periods if p.get("status")=="active"),periods[0] if periods else None)
