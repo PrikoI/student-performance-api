@@ -223,6 +223,19 @@ async def password_reset_complete(body:ResetComplete,request:Request):
 @app.post("/auth/logout")
 async def logout(me=Depends(identity)):
     await rpc("logout_student",{"p_session_token":me["token"]});return {"logged_out":True}
+@app.post("/account/delete")
+async def delete_account(body:Delete,me=Depends(identity)):
+    if not body.confirm:raise HTTPException(409,"Подтвердите удаление аккаунта")
+    if me.get("role")=="admin":raise HTTPException(403,"Администраторский аккаунт нельзя удалить через приложение")
+    email=me.get("email")
+    key=os.getenv("RESEND_API_KEY")
+    if key and email:
+        html="<h2>Аккаунт Perfecta удалён</h2><p>Ваш профиль и связанные академические данные были удалены.</p><p><a href='https://student-performance-api-ee1k.onrender.com/'>Перейти на Perfecta</a></p>"
+        async with httpx.AsyncClient(timeout=20,follow_redirects=False) as client:
+            response=await client.post("https://api.resend.com/emails",headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"},json={"from":os.getenv("MAIL_FROM","Perfecta <onboarding@resend.dev>"),"to":[email],"subject":"Аккаунт Perfecta удалён","html":html})
+        if response.is_error:raise HTTPException(502,"Не удалось отправить уведомление об удалении")
+    await rpc("api_delete",{"p_token":me["token"],"p_entity":"students","p_id":me["student_id"]})
+    return {"deleted":True}
 @app.get("/me")
 async def profile(me=Depends(identity)):return {k:v for k,v in me.items() if k!="token"}
 @app.get("/data")
