@@ -26,5 +26,4 @@ LANGUAGE sql SECURITY DEFINER SET search_path='' AS $
 $$;
 
 REVOKE ALL ON FUNCTION private.create_subject_records_atomic(text,jsonb), public.create_subject_records_atomic(text,jsonb) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION private.create_subject_records_atomic(text,jsonb) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.create_subject_records_atomic(text,jsonb) TO anon, authenticated;
