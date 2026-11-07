@@ -386,7 +386,7 @@ Allowed action objects:
 {"operation":"read","entity":"academic_performance","query":""}
 {"operation":"write","entity":"academic_performance","data":{...}}
 {"operation":"create_subject","data":{"course_name":"Calculus","credits":5,"current_grade":90,"attendance":95}}
-{"operation":"import_profile","data":{"setup":{"calendar_type":"quarter","institution_name":"...","program_name":"9 класс","duration_years":1,"periods_per_year":4,"start_year":2026},"subjects":[{"course_name":"Алгебра","grade_text":"5","current_grade":95,"workload_value":1,"workload_unit":"credits"}]}}
+{"operation":"import_profile","data":{"setup":{"calendar_type":"quarter","institution_name":"...","program_name":"9 класс","duration_years":1,"periods_per_year":4,"start_year":2026},"subjects":[{"course_name":"Алгебра","current_grade":5,"workload_value":24,"workload_unit":"lessons"}]}}
 {"operation":"predict","level":"period"}
 {"operation":"calculate","mode":"gpa","calendar":"trimester","items":[]}
 {"operation":"answer","text":"..."}
@@ -436,12 +436,21 @@ def deterministic_actions(message,data):
             subjects=source.get("subjects") or []
             setup=source.get("setup") or {}
             answer=message.split("Ответ пользователя на уточнение:",1)[-1].casefold()
-            match=re.search(r"(\d+(?:[.,]\d+)?)\s*(кредит|кред|урок|час)",answer)
-            if match and subjects:
-                unit="credits" if "кредит" in match.group(2) else ("lessons" if "урок" in match.group(2) else "academic_hours")
-                return [{"operation":"import_profile","data":{"setup":setup,"subjects":subjects,"common_workload":{"value":float(match.group(1).replace(",",".")),"unit":unit}}}]
-            if "пропустить нагрузку" in answer and subjects:
-                return [{"operation":"import_profile","data":{"setup":setup,"subjects":subjects,"common_workload":{"value":1,"unit":"credits"}}}]
+            if subjects:
+                # Merge per-subject lesson counts from a clarification reply; never invent a common value.
+                count_pairs=re.findall(r"(?:по\s+)?([А-Яа-яЁёҚқҒғІіҢңӨөҰұҮүҺһӘәA-Za-z][^\n,;—-]*?)\s+(?:всего\s+)?(?:урок(?:ов|а)?\s*(?:было)?|было\s+урок(?:ов|а)?)?\s*[:—-]?\s*(\d+(?:[.,]\d+)?)\s*(?:урок(?:ов|а)?)?",answer)
+                merged=0
+                for raw_name,raw_value in count_pairs:
+                    probe=" ".join(raw_name.strip(" .,:;").split())
+                    if not probe:continue
+                    probe_stem=re.sub(r"(ому|ему|ской|ому|ии|ии|е|у|а|я)$","",probe.split()[0])
+                    target=next((s for s in subjects if probe_stem[:4] and probe_stem[:4] in str(s.get("course_name","")).casefold()),None)
+                    if target:
+                        value=float(raw_value.replace(",","."))
+                        target["workload_value"]=value;target["workload_unit"]="lessons";target["lessons_held"]=int(value) if value.is_integer() else value
+                        merged+=1
+                if merged:
+                    return [{"operation":"import_profile","data":{"setup":setup,"subjects":subjects}}]
         except (ValueError,TypeError,KeyError,IndexError):
             pass
     marker=text.find("итоговые оценки")
@@ -452,7 +461,7 @@ def deterministic_actions(message,data):
         for name,grade in pairs:
             name=" ".join(name.strip(" .,:;").split())
             if name and len(name)<=100:
-                subjects.append({"course_name":name,"grade_text":grade,"current_grade":95 if grade=="5" else 75})
+                subjects.append({"course_name":name,"current_grade":float(grade)})
         school=re.search(r"школа\s*:\s*([^\n.]+)",text)
         class_match=re.search(r"класс\s*:\s*([^\n.]+)",text)
         setup={"calendar_type":"quarter","institution_name":school.group(1).strip() if school else "Школа","program_name":((class_match.group(1).strip()+" класс") if class_match else "9 класс"),"education_level":"school","duration_years":1,"periods_per_year":4,"start_year":int(profile.group(1))}
@@ -506,8 +515,8 @@ async def chat(body:Chat,me=Depends(identity)):
     throttle("ai:"+str(me["account_id"]),30,3600)
     async with asyncio.timeout(90):
         data=await all_data(me)
-        mutation_intent=bool(re.search(r"заполн|добав|сохран|внес|измени|черновик|уточнен|уроков было|import|add|save|update",body.message,re.I)) or len(body.message)>300
-        actions=(None if mutation_intent else deterministic_actions(body.message,data)) or await plan_actions(body.message,data,await config(me))
+        # Deterministic parsing protects structured school imports from model hallucinations.
+        actions=deterministic_actions(body.message,data) or await plan_actions(body.message,data,await config(me))
         return await execute_actions(actions,me,False)
 
 AI_READ_ENTITIES={
