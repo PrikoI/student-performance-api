@@ -138,10 +138,11 @@ class Chat(Strict):
     locale:Literal["ru","kk","en","zh","es","zh-CN","zh-TW"]="ru"
 class ExecutePlan(Strict):
     confirmation_token: str=Field(max_length=30000)
-class PasswordChange(Strict):
+class CurrentPassword(Strict):
     current_password:SecretStr
+class PasswordChange(CurrentPassword):
     new_password:SecretStr
-class Delete(Strict):
+class Delete(CurrentPassword):
     current_password:SecretStr
     confirm:bool=False
 
@@ -190,6 +191,15 @@ async def login(body:Login,request:Request):
 @app.post("/auth/logout")
 async def logout(me=Depends(identity)):
     await rpc("logout_student",{"p_session_token":me["token"]});return {"logged_out":True}
+@app.post("/account/password/verify")
+async def verify_account_password(body:CurrentPassword,me=Depends(identity)):
+    current=body.current_password.get_secret_value()
+    if not current or len(current.encode())>72:raise HTTPException(422,"Введите текущий пароль")
+    return await rpc("verify_own_password",{
+        "p_token":me["token"],
+        "p_current_password":current,
+    })
+
 @app.post("/account/password")
 async def change_account_password(body:PasswordChange,me=Depends(identity)):
     current=body.current_password.get_secret_value()
