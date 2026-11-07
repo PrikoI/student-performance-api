@@ -475,7 +475,7 @@ def deterministic_actions(message,data):
     marker=text.find("итоговые оценки")
     if profile and marker >= 0:
         segment=message[marker:]
-        pairs=re.findall(r"(?m)^\\s*([А-Яа-яЁёҚқҒғІіҢңӨөҰұҮүҺһӘәA-Za-z][^—\\-\\n:]{0,100}?)\\s*[—-]\\s*([2-5])\\s*$",segment)
+        pairs=re.findall(r"(?m)^\s*([А-Яа-яЁёҚқҒғІіҢңӨөҰұҮүҺһӘәA-Za-z][^—\-\n:]{0,100}?)\s*[—-]\s*([2-5])\s*$",segment)
         subjects=[]
         for name,grade in pairs:
             name=" ".join(name.strip(" .,:;").split())
