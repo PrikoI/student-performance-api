@@ -73,7 +73,7 @@ async def rpc(name,body):
     return r.json() if r.content else None
 
 AGREEMENT_EXEMPT_PATHS={
-    "/me","/preferences","/agreement/status","/agreement/accept","/auth/logout",
+    "/me","/preferences","/tables/user_preferences","/agreement/status","/agreement/accept","/auth/logout",
     "/account/password/verify","/account/password","/account/delete"
 }
 async def identity(request:Request,credentials:HTTPAuthorizationCredentials|None=Depends(security)):
