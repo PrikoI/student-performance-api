@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
-from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, app
+from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, admin_page, app
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -180,6 +180,19 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   html=application_page()
   for marker in ("const COMPLETE_TRANSLATIONS=","Student directory, ready-made queries","学生目录、快捷查询","Студенттер каталогы","Directorio de estudiantes","requestAnimationFrame(()=>applyLanguage())"):self.assertIn(marker,html)
   self.assertIn("The session token persists only when",html)
+ async def test_saved_session_uses_loading_shell_without_login_flash(self):
+  html=application_page()
+  self.assertIn('id="boot" class="boot"',html)
+  self.assertIn('<section id="auth" class="auth hidden">',html)
+  self.assertIn("$('#boot').classList.add('hidden');$('#auth').classList.add('hidden')",html)
+  self.assertIn("function showAuth(message=''){$('#boot').classList.add('hidden')",html)
+ async def test_admin_page_reuses_session_and_back_does_not_logout(self):
+  html=admin_page()
+  self.assertIn('localStorage.getItem(PERSISTENT_TOKEN_KEY)||sessionStorage.getItem(SESSION_TOKEN_KEY)',html)
+  self.assertIn('Вернуться в Perfecta',html)
+  self.assertIn('Выйти из аккаунта',html)
+  self.assertIn('loadSettings();',html)
+  self.assertIn('location.replace("/")',html)
 if __name__=="__main__":unittest.main()
 
 
