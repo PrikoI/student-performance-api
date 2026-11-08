@@ -94,6 +94,10 @@ class RegistrationStart(Strict):
     username:str=Field(min_length=3,max_length=30)
     password:SecretStr
     full_name:str=Field(min_length=1,max_length=100)
+    agreement_version:str=Field(max_length=30)
+    agreement_accepted:bool=False
+class AgreementAccept(Strict):
+    version:str=Field(max_length=30)
 class Record(Strict):
     data:dict[str,Any]
 class BatchItem(Strict):
@@ -172,12 +176,15 @@ async def register_start(body:RegistrationStart,request:Request):
     if "@" not in body.email or "." not in body.email.rsplit("@",1)[-1]:raise HTTPException(422,"Введите корректный email")
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{2,29}",body.username):raise HTTPException(422,"Логин: 3–30 латинских букв, цифр или _. Первый символ — буква.")
     if len(password)<8 or len(password.encode())>72:raise HTTPException(422,"Пароль должен занимать 8–72 UTF-8 байта")
-    return await rpc("register_without_email_verification",{
+    if not body.agreement_accepted or body.agreement_version!="2026-11-08-v1":raise HTTPException(422,"Необходимо принять актуальное пользовательское соглашение")
+    return await rpc("register_with_agreement",{
         "p_secret":auth_secret(),
         "p_email":body.email.strip().lower(),
         "p_username":body.username.strip(),
         "p_password":password,
         "p_full_name":body.full_name.strip(),
+        "p_agreement_version":body.agreement_version,
+        "p_agreement_accepted":body.agreement_accepted,
     })
 
 @app.post("/auth/login")
@@ -187,6 +194,19 @@ async def login(body:Login,request:Request):
     if not identifier:raise HTTPException(422,"Введите email или логин")
     if len(body.password.get_secret_value().encode())>72:raise HTTPException(422,"Password must fit 72 UTF-8 bytes")
     return await rpc("login_student",{"p_email":identifier,"p_password":body.password.get_secret_value()})
+
+@app.get("/agreement/status")
+async def agreement_status(me=Depends(identity)):
+    return await rpc("agreement_status",{"p_token":me["token"]})
+
+@app.post("/agreement/accept")
+async def agreement_accept(body:AgreementAccept,me=Depends(identity)):
+    if body.version!="2026-11-08-v1":raise HTTPException(409,"Agreement version is outdated")
+    return await rpc("accept_agreement",{"p_token":me["token"],"p_version":body.version})
+
+@app.get("/agreement/stats")
+async def agreement_stats(me=Depends(identity)):
+    return await rpc("agreement_stats",{"p_token":me["token"]})
 
 @app.post("/auth/logout")
 async def logout(me=Depends(identity)):
