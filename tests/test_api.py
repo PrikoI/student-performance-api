@@ -163,6 +163,14 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   with patch("app.main.all_data",AsyncMock(return_value={"academic_periods":[{"period_id":1,"status":"active"}]})):
    result=await execute_actions(actions,STUDENT,False)
   self.assertEqual(result["results"][0]["questions"],["Сколько уроков?","Какая четверть?"])
+ async def test_auth_screen_uses_detected_language_before_login(self):
+  html=application_page()
+  for marker in ("const AUTH_COPY=","function applyAuthLanguage()","document.documentElement.lang=state.prefs.language||detectDeviceLanguage()","applyAuthLanguage();$('#authMessage')"):self.assertIn(marker,html)
+  for language in ("ru:","en:","kk:","zh:","es:"):self.assertIn(language,html)
+ async def test_remember_me_persists_only_the_session_token(self):
+  html=application_page()
+  for marker in ('id="rememberMe"',"PERSISTENT_TOKEN_KEY='sp_persistent_token'","localStorage.getItem(PERSISTENT_TOKEN_KEY)||sessionStorage.getItem(SESSION_TOKEN_KEY)","storeSessionToken(d.session_token,$('#rememberMe').checked)","function clearStoredSession(){sessionStorage.removeItem(SESSION_TOKEN_KEY);localStorage.removeItem(PERSISTENT_TOKEN_KEY)}"):self.assertIn(marker,html)
+  self.assertNotIn("localStorage.setItem('password'",html)
 if __name__=="__main__":unittest.main()
 
 
