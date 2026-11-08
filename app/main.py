@@ -355,15 +355,36 @@ async def comparable_gpa(calendar:str|None=None,scale_id:int|None=None,me=Depend
 
 @app.post("/admin/assistant")
 async def admin_assistant(body:Chat,me=Depends(administrator)):
-    """Safe admin-wide command surface: no raw SQL and no credentials/private tables."""
-    text=body.message.casefold()
-    if any(word in text for word in ("средн","успеваем","average","performance","gpa","гпа")):
+    """Multilingual safe admin intents; raw SQL and private credential tables stay unavailable."""
+    text=" ".join(body.message.casefold().split())
+    if any(word in text for word in ("средн","успеваем","average","performance","гпа","gpa","орташа","үлгерім","平均","promedio","rendimiento")):
         return {"kind":"comparable_performance","result":await comparable_gpa(me=me)}
-    allowed=("students","academic_performance","academic_periods","academic_years","study_programs","predictions","courses","grading_scales","grading_bands","assessment_components","assessments","assessment_results")
-    entity=next((x for x in allowed if x.casefold() in text),None)
+    aliases={
+      "students":("students","student","студент","ученик","оқушы","学生","estudiante"),
+      "academic_performance":("academic_performance","оценк","успеваемост","баға","成绩","calificaci"),
+      "academic_periods":("academic_periods","период","четверт","триместр","семестр","кезең","学期","periodo"),
+      "academic_years":("academic_years","учебн год","академическ год","оқу жылы","学年","año académico"),
+      "study_programs":("study_programs","программ","бағдарлама","课程计划","programa"),
+      "predictions":("predictions","прогноз","болжам","预测","pronóstico"),
+      "courses":("courses","предмет","дисциплин","курс","пән","科目","asignatura"),
+      "grading_scales":("grading_scales","шкал","система оцен","бағалау","评分","escala"),
+      "grading_bands":("grading_bands","диапазон оцен","границ оцен","баға диапаз","分数段","rango"),
+      "assessment_components":("assessment_components","компонент","quiz","midterm","final","组件","componente"),
+      "assessments":("assessments","работ","экзамен","задани","бағалау жұмы","测验","evaluación"),
+      "assessment_results":("assessment_results","результат работ","результат экзам","测验结果","resultado")
+    }
+    entity=next((entity for entity,words in aliases.items() if any(word in text for word in words)),None)
     if entity:
         return {"kind":"table","entity":entity,"result":await admin_read(entity,q="",limit=100,me=me)}
-    return {"kind":"help","text":"Ask for a permitted table by name or request comparable average performance. Raw SQL and credential tables are intentionally unavailable.","tables":allowed}
+    help_text={
+      "ru":"Напишите «покажи всех студентов», «покажи прогнозы» или «посчитай среднюю успеваемость». SQL и таблицы паролей недоступны.",
+      "kk":"«Барлық студенттерді көрсет», «болжамдарды көрсет» немесе «орташа үлгерімді есепте» деп жазыңыз.",
+      "zh":"请输入“显示所有学生”“显示预测”或“计算平均成绩”。",
+      "es":"Escribe «muestra todos los estudiantes», «muestra pronósticos» o «calcula el rendimiento promedio».",
+      "en":"Ask to show all students, show predictions, or calculate comparable average performance."
+    }
+    locale=body.locale.split("-")[0]
+    return {"kind":"help","text":help_text.get(locale,help_text["en"]),"examples":["покажи всех студентов","покажи прогнозы","посчитай среднюю успеваемость"]}
 
 @app.post("/calculate")
 async def calculator(body:Calculation,me=Depends(identity)):
@@ -428,7 +449,9 @@ async def calculator(body:Calculation,me=Depends(identity)):
 
 @app.post("/predict")
 async def predict(body:Prediction,me=Depends(identity)):
-    try:result=forecast(await all_data(me),body.period_id,body.level,body.method)
+    try:
+        data,reference=await asyncio.gather(all_data(me),rpc("api_forecast_reference",{"p_token":me["token"]}))
+        result=forecast(data,body.period_id,body.level,body.method,reference)
     except (ValueError,KeyError,TypeError) as e:raise HTTPException(422,str(e))
     if body.save:
         result["prediction_id"]=await rpc("api_save_prediction",{"p_token":me["token"],"p_result":result})
