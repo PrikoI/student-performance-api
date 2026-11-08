@@ -72,11 +72,18 @@ async def rpc(name,body):
                             "Session invalid" if code=="28000" else friendly or "Database rejected request; check fields, ownership and referenced records")
     return r.json() if r.content else None
 
-async def identity(credentials:HTTPAuthorizationCredentials|None=Depends(security)):
+AGREEMENT_EXEMPT_PATHS={
+    "/me","/preferences","/agreement/status","/agreement/accept","/auth/logout",
+    "/account/password/verify","/account/password","/account/delete"
+}
+async def identity(request:Request,credentials:HTTPAuthorizationCredentials|None=Depends(security)):
     if not credentials:raise HTTPException(401,"Bearer session required")
     token=credentials.credentials
     throttle("user:"+hashlib.sha256(token.encode()).hexdigest(),120,60)
     me=await rpc("api_identity",{"p_token":token})
+    if request.url.path not in AGREEMENT_EXEMPT_PATHS and me.get("role")!="admin":
+        agreement=await rpc("agreement_status",{"p_token":token})
+        if agreement.get("required"):raise HTTPException(451,"Current user agreement must be accepted")
     return {"token":token,**me}
 
 async def administrator(me=Depends(identity)):
@@ -703,15 +710,24 @@ def deterministic_actions(message,data,locale="ru"):
 
 def redact_ai_log_text(value):
     text=str(value or "")[:6000]
-    text=re.sub(r"(?i)\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b","[email]",text)
-    text=re.sub(r"(?i)(password|пароль|token|токен|api[_ -]?key)\\s*[:=]\\s*\\S+",r"\\1=[redacted]",text)
+    text=re.sub(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b","[email]",text)
+    text=re.sub(r"(?i)(password|пароль|token|токен|secret|api[_ -]?key)\s*[:=]\s*\S+",r"\1=[redacted]",text)
     return text
+
+AI_LOG_SECRET_KEY=re.compile(r"(?i)(password|пароль|token|токен|secret|api[_ -]?key|authorization|cookie|email)")
+def redact_ai_log_value(value,depth=0):
+    if depth>8:return "[truncated]"
+    if isinstance(value,dict):
+        return {str(key):("[redacted]" if AI_LOG_SECRET_KEY.search(str(key)) else redact_ai_log_value(item,depth+1)) for key,item in list(value.items())[:100]}
+    if isinstance(value,(list,tuple)):return [redact_ai_log_value(item,depth+1) for item in list(value)[:100]]
+    if isinstance(value,str):return redact_ai_log_text(value)
+    return value
 
 async def log_ai_interaction(me,phase,locale,status,user_message=None,actions=None,outcome=None):
     payload={"phase":phase,"locale":normalize_ai_locale(locale),"status":status}
     if user_message:payload["user_message"]=redact_ai_log_text(user_message)
-    if actions is not None:payload["action_plan"]=actions
-    if outcome is not None:payload["outcome"]=outcome
+    if actions is not None:payload["action_plan"]=redact_ai_log_value(actions)
+    if outcome is not None:payload["outcome"]=redact_ai_log_value(outcome)
     try:await rpc("log_ai_interaction",{"p_session_token":me["token"],"p_payload":payload})
     except Exception:pass
 
