@@ -26,7 +26,7 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertNotIn('id="logout"',html);self.assertIn("Вернуться в Perfecta",html)
  async def test_application_shell(self):
   html=application_page()
-  for marker in ("Академический калькулятор","Режим администратора","FIGMA_ACCENTS","fillWithAI","confirmAIChanges","Прогнозирование",'data-colorblind="true"'):self.assertIn(marker,html)
+  for marker in ("Академический калькулятор","Режим администратора","FIGMA_ACCENTS","fillWithAI","confirmAIChanges","Прогнозирование",'data-colorblind="true"',"boot-brand-logo","Университет — триместры","Школа — четверти"):self.assertIn(marker,html)
  async def test_first_login_uses_supported_device_language_with_english_fallback(self):
   html=application_page()
   for marker in ("navigator.languages","SUPPORTED_LANGUAGES","return'en'","perfecta_language_user_selected","Device language preference was not saved"):self.assertIn(marker,html)

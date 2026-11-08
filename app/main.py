@@ -928,7 +928,7 @@ async def execute_actions(actions,me,confirmed,locale="ru"):
             try:
                 op=a["operation"]
                 if op=="read":result=await read_table(a["entity"],q=str(a.get("query","")),me=me)
-                elif op=="predict":result=await predict(Prediction(period_id=a["period_id"],level=a.get("level","period")),me)
+                elif op=="predict":result=await predict(Prediction(period_id=a["period_id"],level=a.get("level","period"),method=a.get("method","adaptive"),save=True),me)
                 elif op=="calculate":result=await calculator(Calculation(**{k:v for k,v in a.items() if k!="operation"}),me)
                 elif op=="write":
                     if not confirmed:result={"status":"confirmation_required","proposed_action":a}
