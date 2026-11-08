@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
-from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, ai_scoped_context, redact_ai_log_text, app
+from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, app
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -19,6 +19,16 @@ class APITests(unittest.IsolatedAsyncioTestCase):
  async def test_admin_role(self):
   with self.assertRaises(HTTPException) as ctx:await administrator(STUDENT)
   self.assertEqual(ctx.exception.status_code,403)
+ async def test_unsigned_account_is_blocked_from_academic_api(self):
+  request=SimpleNamespace(url=SimpleNamespace(path="/data"));credentials=SimpleNamespace(credentials="session")
+  with patch("app.main.rpc",AsyncMock(side_effect=[{"account_id":"a","role":"student"},{"required":True}])) as rpc:
+   with self.assertRaises(HTTPException) as ctx:await identity(request,credentials)
+   self.assertEqual(ctx.exception.status_code,451);self.assertEqual(rpc.await_count,2)
+ async def test_unsigned_account_can_access_agreement_endpoint(self):
+  request=SimpleNamespace(url=SimpleNamespace(path="/agreement/status"));credentials=SimpleNamespace(credentials="session")
+  with patch("app.main.rpc",AsyncMock(return_value={"account_id":"a","role":"student"})) as rpc:
+   result=await identity(request,credentials)
+   self.assertEqual(result["account_id"],"a");rpc.assert_awaited_once_with("api_identity",{"p_token":"session"})
  async def test_registration_shell_has_no_email_codes_or_recovery(self):
   html=application_page()
   self.assertNotIn('id="forgotAuth"',html)
@@ -39,7 +49,7 @@ class APITests(unittest.IsolatedAsyncioTestCase):
    self.assertEqual(ctx.exception.status_code,422);rpc.assert_not_awaited()
  async def test_agreement_is_present_in_registration_and_about(self):
   html=application_page()
-  for marker in ('id="consentField"','id="agreementGate"',"Передача души","/agreement/accept","soulCounter"):self.assertIn(marker,html)
+  for marker in ('id="consentField"','id="agreementGate"',"Передача души","/agreement/accept","soulCounter","agreement.required?{}:await api('/data')","await bootstrap()"):self.assertIn(marker,html)
  async def test_password_settings_are_localized_and_email_recovery_is_absent(self):
   html=application_page()
   for marker in ("SECURITY_COPY","/account/password","verifyDeletionPassword","current_password:password"):self.assertIn(marker,html)
@@ -82,6 +92,9 @@ class APITests(unittest.IsolatedAsyncioTestCase):
  async def test_ai_log_redacts_email_and_secrets(self):
   clean=redact_ai_log_text("mail me@example.com password: hunter2 token=abc api_key: xyz")
   self.assertNotIn("me@example.com",clean);self.assertNotIn("hunter2",clean);self.assertNotIn("abc",clean);self.assertNotIn("xyz",clean)
+  nested=redact_ai_log_value({"actions":[{"email":"person@example.com","data":{"password":"secret","note":"token: abc"}}],"outcome":{"confirmation_token":"sealed","text":"contact other@example.com"}})
+  rendered=json.dumps(nested)
+  for secret in ("person@example.com","secret","token: abc","sealed","other@example.com"):self.assertNotIn(secret,rendered)
  async def test_ai_chat_route_is_bound_to_chat_handler(self):
   route=next(route for route in app.routes if getattr(route,"path",None)=="/ai/chat")
   self.assertIs(route.endpoint,chat)
