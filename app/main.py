@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, ConfigDict, SecretStr
-from .academics import calculate, forecast, grade_points, school_grade_percent
+from .academics import calculate, forecast, grade_points, grade_band, school_grade_percent
 
 app=FastAPI(title="Student Performance API",version="1.0.0")
 @app.exception_handler(TimeoutError)
@@ -281,63 +281,62 @@ async def admin_read(entity:str,q:str="",student_id:int|None=None,offset:int=0,l
 
 @app.get("/admin/analytics/comparable-gpa")
 async def comparable_gpa(calendar:str|None=None,scale_id:int|None=None,me=Depends(administrator)):
+    """Legacy route name; returns comparable percentage performance, not GPA."""
     async def items(entity):
-        collected=[]; offset=0
+        collected=[];offset=0
         while True:
             result=await rpc("api_admin_search",{"p_token":me["token"],"p_entity":entity,"p_query":"","p_student_id":None,"p_offset":offset,"p_limit":100})
-            page=result.get("items",[])
-            collected.extend(page)
+            page=result.get("items",[]);collected.extend(page)
             if len(page)<100:break
             offset+=len(page)
             if offset>10000:raise HTTPException(422,"Analytics data set is too large")
         return collected
     students,records,periods,settings,bands=await asyncio.gather(*[items(x) for x in ("students","academic_performance","academic_periods","academic_settings","grading_bands")])
-    setting_by_id={x["settings_id"]:x for x in settings}; period_by_id={x["period_id"]:x for x in periods}
-    eligible=[]
-    for r in records:
-        p=period_by_id.get(r.get("period_id")); s=setting_by_id.get(p.get("settings_id")) if p else None
-        if not s or r.get("current_grade") is None or r.get("credits") is None:continue
-        if calendar and s.get("calendar_type")!=calendar:continue
-        if scale_id is not None and s.get("scale_id")!=scale_id:continue
-        eligible.append((r,s))
+    setting_by_id={x["settings_id"]:x for x in settings};period_by_id={x["period_id"]:x for x in periods};eligible=[]
+    for record in records:
+        period=period_by_id.get(record.get("period_id"));setting=setting_by_id.get(period.get("settings_id")) if period else None
+        if not setting or record.get("current_grade") is None:continue
+        if calendar and setting.get("calendar_type")!=calendar:continue
+        if scale_id is not None and setting.get("scale_id")!=scale_id:continue
+        eligible.append((record,setting))
     bands_by_scale={}
     for band in bands:bands_by_scale.setdefault(band.get("scale_id"),[]).append(band)
-    def scale_signature(settings):
-        scale_bands=bands_by_scale.get(settings.get("scale_id"),[])
+    def signature(setting):
+        scale_bands=bands_by_scale.get(setting.get("scale_id"),[])
         normalized=sorted((json.dumps(x.get("score_range"),sort_keys=True),str(x.get("letter_grade") or ""),str(x.get("grade_points"))) for x in scale_bands)
-        return json.dumps(normalized,separators=(",",":"))
+        return (setting.get("calendar_type"),setting.get("grading_scale"),str(setting.get("grade_min")),str(setting.get("grade_max")),json.dumps(normalized,separators=(",",":")))
     groups={}
-    for r,s in eligible:
-        key=(s.get("calendar_type"),s.get("grading_scale"),str(s.get("grade_min")),str(s.get("grade_max")),s.get("credit_system"),scale_signature(s))
-        groups.setdefault(key,[]).append((r,s))
+    for record,setting in eligible:groups.setdefault(signature(setting),[]).append((record,setting))
     if not groups:return {"comparable":False,"reason":"No records share the selected calendar and grading scale","groups":[]}
-    out=[]; names={x["student_id"]:x.get("full_name") for x in students}
+    names={x["student_id"]:x.get("full_name") for x in students};out=[]
     for key,entries in groups.items():
         by_student={}
-        for r,s in entries:by_student.setdefault(r["student_id"],[]).append((r,s))
+        for record,setting in entries:by_student.setdefault(record["student_id"],[]).append((record,setting))
         members=[]
         for sid,student_entries in by_student.items():
-            converted=[]
-            for r,s in student_entries:
-                scale_bands=bands_by_scale.get(s.get("scale_id"),[])
-                gp=grade_points(float(r["current_grade"]),scale_bands) if scale_bands else None
-                if gp is not None:converted.append({"grade":gp,"credits":r["credits"]})
-            members.append({"student_id":sid,"student":names.get(sid),"gpa":round(calculate(converted)["average"],3) if converted else None,"subjects":len(student_entries)})
-        valid=[x["gpa"] for x in members if x["gpa"] is not None]
-        out.append({"calendar":key[0],"scale_name":f"{key[1]} {key[2]}–{key[3]}","grade_range":[key[2],key[3]],"student_count":len(members),"average_gpa":round(sum(valid)/len(valid),3) if valid else None,"students":members})
-    return {"comparable":True,"groups":out}
+            school=key[0]=="quarter";values=[]
+            for record,setting in student_entries:
+                percent=school_grade_percent(record["current_grade"]) if school else float(record["current_grade"])
+                weight=1 if school else float(record.get("workload_value") or record.get("credits") or 1)
+                values.append((percent,weight))
+            average=sum(value*weight for value,weight in values)/sum(weight for _,weight in values)
+            scale_bands=bands_by_scale.get(student_entries[0][1].get("scale_id"),[]);band=grade_band(average,scale_bands)
+            members.append({"student_id":sid,"student":names.get(sid),"average_percent":round(average,2),"converted_grade":band.get("letter_grade") if band else None,"subjects":len(student_entries)})
+        valid=[x["average_percent"] for x in members]
+        out.append({"calendar":key[0],"scale_name":f"{key[1]} {key[2]}–{key[3]}","grade_range":[key[2],key[3]],"student_count":len(members),"average_percent":round(sum(valid)/len(valid),2) if valid else None,"students":members})
+    return {"comparable":True,"metric":"average_percent","groups":out}
 
 @app.post("/admin/assistant")
 async def admin_assistant(body:Chat,me=Depends(administrator)):
     """Safe admin-wide command surface: no raw SQL and no credentials/private tables."""
     text=body.message.casefold()
-    if "gpa" in text or "гпа" in text:
-        return {"kind":"comparable_gpa","result":await comparable_gpa(me=me)}
+    if any(word in text for word in ("средн","успеваем","average","performance","gpa","гпа")):
+        return {"kind":"comparable_performance","result":await comparable_gpa(me=me)}
     allowed=("students","academic_performance","academic_periods","academic_years","study_programs","predictions","courses","grading_scales","grading_bands","assessment_components","assessments","assessment_results")
     entity=next((x for x in allowed if x.casefold() in text),None)
     if entity:
         return {"kind":"table","entity":entity,"result":await admin_read(entity,q="",limit=100,me=me)}
-    return {"kind":"help","text":"Ask for a permitted table by name or request comparable average GPA. Raw SQL and credential tables are intentionally unavailable.","tables":allowed}
+    return {"kind":"help","text":"Ask for a permitted table by name or request comparable average performance. Raw SQL and credential tables are intentionally unavailable.","tables":allowed}
 
 @app.post("/calculate")
 async def calculator(body:Calculation,me=Depends(identity)):
