@@ -21,12 +21,21 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertNotIn('id="verificationCode"',html)
   self.assertNotIn('/auth/password-reset/start',html)
  async def test_registration_creates_session_immediately(self):
-  body=RegistrationStart(email="new@example.com",username="NewUser",password="password123",full_name="New User")
+  body=RegistrationStart(email="new@example.com",username="NewUser",password="password123",full_name="New User",agreement_version="2026-11-08-v1",agreement_accepted=True)
   request=SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))
   result={"session_token":"token","student_id":99}
   with patch("app.main.auth_secret",return_value="secret"),patch("app.main.rpc",AsyncMock(return_value=result)) as rpc:
    self.assertEqual(await register_start(body,request),result)
-   rpc.assert_awaited_once_with("register_without_email_verification",{"p_secret":"secret","p_email":"new@example.com","p_username":"NewUser","p_password":"password123","p_full_name":"New User"})
+   rpc.assert_awaited_once_with("register_with_agreement",{"p_secret":"secret","p_email":"new@example.com","p_username":"NewUser","p_password":"password123","p_full_name":"New User","p_agreement_version":"2026-11-08-v1","p_agreement_accepted":True})
+ async def test_registration_requires_current_agreement(self):
+  body=RegistrationStart(email="new2@example.com",username="NewUser2",password="password123",full_name="New User",agreement_version="old",agreement_accepted=True)
+  request=SimpleNamespace(client=SimpleNamespace(host="127.0.0.2"))
+  with patch("app.main.rpc",AsyncMock()) as rpc:
+   with self.assertRaises(HTTPException) as ctx:await register_start(body,request)
+   self.assertEqual(ctx.exception.status_code,422);rpc.assert_not_awaited()
+ async def test_agreement_is_present_in_registration_and_about(self):
+  html=application_page()
+  for marker in ('id="consentField"','id="agreementGate"',"Передача души","/agreement/accept","soulCounter"):self.assertIn(marker,html)
  async def test_password_settings_are_localized_and_email_recovery_is_absent(self):
   html=application_page()
   for marker in ("SECURITY_COPY","/account/password","verifyDeletionPassword","current_password:password"):self.assertIn(marker,html)
