@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
-from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, ai_scoped_context
+from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, ai_scoped_context, redact_ai_log_text
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -61,7 +61,14 @@ class APITests(unittest.IsolatedAsyncioTestCase):
    with self.assertRaises(HTTPException) as ctx:await delete_account(Delete(current_password="admin-password",confirm=True),admin)
    self.assertEqual(ctx.exception.status_code,403);rpc.assert_not_awaited()
  async def test_manual_calculation(self):
-  r=await calculator(Calculation(calendar="quarter",mode="average",items=[{"grade":80,"credits":1},{"grade":100,"credits":3}]),STUDENT);self.assertEqual(r["average"],95)
+  r=await calculator(Calculation(calendar="semester",mode="average",items=[{"grade":80,"credits":1},{"grade":100,"credits":3}]),STUDENT);self.assertEqual(r["average_percent"],95)
+ async def test_school_template_returns_percent_and_converted_mark_without_workload(self):
+  bands=[{"score_range":{"lower":0,"upper":40},"letter_grade":"2","grade_points":0},{"score_range":{"lower":40,"upper":65},"letter_grade":"3","grade_points":1},{"score_range":{"lower":65,"upper":85},"letter_grade":"4","grade_points":3},{"score_range":{"lower":85,"upper":101},"letter_grade":"5","grade_points":4}]
+  r=await calculator(Calculation(calendar="quarter",mode="average",items=[{"grade":5},{"grade":4}],bands=bands),STUDENT)
+  self.assertEqual(r["average_percent"],83.5);self.assertEqual(r["converted_grade"],"4");self.assertTrue(r["estimated_from_final_grades"])
+ async def test_ai_log_redacts_email_and_secrets(self):
+  clean=redact_ai_log_text("mail me@example.com password: hunter2 token=abc api_key: xyz")
+  self.assertNotIn("me@example.com",clean);self.assertNotIn("hunter2",clean);self.assertNotIn("abc",clean);self.assertNotIn("xyz",clean)
  async def test_empty_calculator_fields_are_not_zero(self):
   with self.assertRaises(HTTPException) as ctx:await calculator(Calculation(calendar="semester",items=[{"grade":80,"credits":None}]),STUDENT)
   self.assertIn("empty fields",ctx.exception.detail)
