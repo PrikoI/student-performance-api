@@ -28,9 +28,9 @@ def grade_band(grade, bands):
             lo,hi=raw["lower"],raw["upper"]
             inclusive=raw.get("upper_inclusive",False)
         else:
-            m=re.fullmatch(r"([\\[(])([^,]+),([^\\])]+)([\\])])",raw)
-            if not m: continue
-            lo,hi=float(m[2]),float(m[3]); inclusive=m[4]=="]"
+            numbers=re.findall(r"-?\d+(?:\.\d+)?",str(raw))
+            if len(numbers)<2: continue
+            lo,hi=map(float,numbers[:2]); inclusive=str(raw).rstrip().endswith("]")
         if float(lo)<=grade and (grade<float(hi) or inclusive and grade==float(hi)):
             return b
     return None
