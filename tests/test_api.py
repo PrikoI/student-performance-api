@@ -102,5 +102,26 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   with self.assertRaises(ValueError):prepared_action({"operation":"read","entity":"accounts"},{})
  async def test_create_subject_requires_valid_credits(self):
   with self.assertRaises(ValueError):prepared_action({"operation":"create_subject","data":{"course_name":"X"}},{"academic_periods":[{"period_id":1,"status":"active"}]})
+ async def test_short_school_subject_does_not_leak_template_courses(self):
+  data={"academic_periods":[{"period_id":7,"status":"active"}],"courses":[{"course_id":1,"course_name":"Calculus"},{"course_id":2,"course_name":"Foreign Language"}]}
+  variants=("Математика, школа, четверть, оценка 5","В школе за 1 четверть по алгебре оценка 4","Предмет Геометрия; школа; четверть; балл 5")
+  expected=("Математика","алгебре","Геометрия")
+  for message,name in zip(variants,expected):
+   with self.subTest(message=message):
+    actions=deterministic_actions(message,data)
+    self.assertEqual(actions,[{"operation":"create_subject","data":{"course_name":name,"current_grade":float(5 if " 5" in message else 4),**({"period_number":1} if "1 четверть" in message else {})}}])
+    rendered=json.dumps(actions,ensure_ascii=False)
+    self.assertNotIn("Calculus",rendered);self.assertNotIn("Foreign Language",rendered)
+ async def test_short_school_subject_with_lessons_is_ready_for_confirmation(self):
+  data={"academic_periods":[{"period_id":7,"status":"active"}]}
+  action=deterministic_actions("Математика, школа, 2 четверть, оценка 5, всего 24 урока",data)[0]
+  prepared=prepared_action(action,data)
+  self.assertEqual(prepared["data"]["course_name"],"Математика")
+  self.assertEqual(prepared["data"]["workload_unit"],"lessons");self.assertEqual(prepared["data"]["workload_value"],24)
+ async def test_clarification_questions_are_deduplicated(self):
+  actions=[{"operation":"clarify","questions":["Сколько уроков?","  сколько   уроков?!","Какая четверть?"],"draft":{"course_name":"Математика"}}]
+  with patch("app.main.all_data",AsyncMock(return_value={"academic_periods":[{"period_id":1,"status":"active"}]})):
+   result=await execute_actions(actions,STUDENT,False)
+  self.assertEqual(result["results"][0]["questions"],["Сколько уроков?","Какая четверть?"])
 if __name__=="__main__":unittest.main()
 
