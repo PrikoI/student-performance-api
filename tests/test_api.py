@@ -12,6 +12,9 @@ class APITests(unittest.IsolatedAsyncioTestCase):
  async def test_application_shell(self):
   html=application_page()
   for marker in ("Академический калькулятор","Режим администратора","FIGMA_ACCENTS","fillWithAI","confirmAIChanges"):self.assertIn(marker,html)
+ async def test_first_login_uses_supported_device_language_with_english_fallback(self):
+  html=application_page()
+  for marker in ("navigator.languages","SUPPORTED_LANGUAGES","return'en'","perfecta_device_language_initialized","Device language preference was not saved"):self.assertIn(marker,html)
  async def test_admin_role(self):
   with self.assertRaises(HTTPException) as ctx:await administrator(STUDENT)
   self.assertEqual(ctx.exception.status_code,403)
