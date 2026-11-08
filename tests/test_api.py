@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
-from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, ai_scoped_context, redact_ai_log_text
+from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, ai_scoped_context, redact_ai_log_text, app
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -78,6 +78,9 @@ class APITests(unittest.IsolatedAsyncioTestCase):
  async def test_ai_log_redacts_email_and_secrets(self):
   clean=redact_ai_log_text("mail me@example.com password: hunter2 token=abc api_key: xyz")
   self.assertNotIn("me@example.com",clean);self.assertNotIn("hunter2",clean);self.assertNotIn("abc",clean);self.assertNotIn("xyz",clean)
+ async def test_ai_chat_route_is_bound_to_chat_handler(self):
+  route=next(route for route in app.routes if getattr(route,"path",None)=="/ai/chat")
+  self.assertIs(route.endpoint,chat)
  async def test_empty_calculator_fields_are_not_zero(self):
   with self.assertRaises(HTTPException) as ctx:await calculator(Calculation(calendar="semester",items=[{"grade":80,"credits":None}]),STUDENT)
   self.assertIn("empty fields",ctx.exception.detail)
@@ -144,4 +147,5 @@ class APITests(unittest.IsolatedAsyncioTestCase):
    result=await execute_actions(actions,STUDENT,False)
   self.assertEqual(result["results"][0]["questions"],["Сколько уроков?","Какая четверть?"])
 if __name__=="__main__":unittest.main()
+
 
