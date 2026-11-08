@@ -701,7 +701,6 @@ def deterministic_actions(message,data,locale="ru"):
         if key not in seen:seen.add(key);out.append(action)
     return out[:5]
 
-@app.post("/ai/chat")
 def redact_ai_log_text(value):
     text=str(value or "")[:6000]
     text=re.sub(r"(?i)\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b","[email]",text)
@@ -716,6 +715,7 @@ async def log_ai_interaction(me,phase,locale,status,user_message=None,actions=No
     try:await rpc("log_ai_interaction",{"p_session_token":me["token"],"p_payload":payload})
     except Exception:pass
 
+@app.post("/ai/chat")
 async def chat(body:Chat,me=Depends(identity)):
     throttle("ai:"+str(me["account_id"]),30,3600)
     actions=None
@@ -937,5 +937,6 @@ used_plans={}
 
 @app.get("/admin",response_class=HTMLResponse)
 def admin_page():return Path(__file__).with_name("admin.html").read_text(encoding="utf-8")
+
 
 
