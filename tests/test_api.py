@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
-from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account
+from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, ai_scoped_context
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -102,6 +102,10 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   with self.assertRaises(ValueError):prepared_action({"operation":"read","entity":"accounts"},{})
  async def test_create_subject_requires_valid_credits(self):
   with self.assertRaises(ValueError):prepared_action({"operation":"create_subject","data":{"course_name":"X"}},{"academic_periods":[{"period_id":1,"status":"active"}]})
+ async def test_ai_context_contains_only_current_students_courses(self):
+  data={"students":[{"student_id":9}],"academic_performance":[{"student_id":9,"course_id":2}],"courses":[{"course_id":1,"course_name":"Calculus","owner_student_id":None},{"course_id":2,"course_name":"Математика","owner_student_id":None},{"course_id":3,"course_name":"Личный предмет","owner_student_id":9},{"course_id":4,"course_name":"Чужой предмет","owner_student_id":10}]}
+  names={row["course_name"] for row in ai_scoped_context(data)["courses"]}
+  self.assertEqual(names,{"Математика","Личный предмет"})
  async def test_short_school_subject_does_not_leak_template_courses(self):
   data={"academic_periods":[{"period_id":7,"status":"active"}],"courses":[{"course_id":1,"course_name":"Calculus"},{"course_id":2,"course_name":"Foreign Language"}]}
   variants=("Математика, школа, четверть, оценка 5","В школе за 1 четверть по алгебре оценка 4","Предмет Геометрия; школа; четверть; балл 5")
