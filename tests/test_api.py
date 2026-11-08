@@ -171,6 +171,15 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   html=application_page()
   for marker in ('id="rememberMe"',"PERSISTENT_TOKEN_KEY='sp_persistent_token'","localStorage.getItem(PERSISTENT_TOKEN_KEY)||sessionStorage.getItem(SESSION_TOKEN_KEY)","storeSessionToken(d.session_token,$('#rememberMe').checked)","function clearStoredSession(){sessionStorage.removeItem(SESSION_TOKEN_KEY);localStorage.removeItem(PERSISTENT_TOKEN_KEY)}"):self.assertIn(marker,html)
   self.assertNotIn("localStorage.setItem('password'",html)
+ async def test_mobile_layout_depends_on_width_not_pointer_type(self):
+  html=application_page()
+  self.assertIn("@media(max-width:760px){",html)
+  self.assertNotIn("(pointer:coarse)",html)
+  for marker in (".sidebar.mobile-open","grid-template-columns:1fr!important",".table-wrap{max-width:100%;overflow-x:auto","font-size:16px"):self.assertIn(marker,html)
+ async def test_core_i18n_covers_admin_profile_about_and_dynamic_modals(self):
+  html=application_page()
+  for marker in ("const COMPLETE_TRANSLATIONS=","Student directory, ready-made queries","学生目录、快捷查询","Студенттер каталогы","Directorio de estudiantes","requestAnimationFrame(()=>applyLanguage())"):self.assertIn(marker,html)
+  self.assertIn("The session token persists only when",html)
 if __name__=="__main__":unittest.main()
 
 
