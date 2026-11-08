@@ -59,7 +59,19 @@ def calculate(items, bands=None, conversions=None):
             "normalized_workload_total":normalized_total if conversions else None,"normalized_workload_unit":"academic_hours" if conversions else None,
             "gpa_note":None if gpa is not None else "No complete matching conversion supplied"}
 
-def forecast(data, period_id, level="period", method="baseline"):
+def historical_projection(current_percent, reference):
+    """Conservative cross-cohort estimate; reference data never unlocks a forecast horizon."""
+    samples=[x for x in (reference or {}).get("samples",[]) if x.get("stage1") is not None and x.get("final") is not None]
+    if len(samples)<20:return None
+    xs=[float(x["stage1"]) for x in samples];ys=[float(x["final"]) for x in samples]
+    mx,my=mean(xs),mean(ys);variance=sum((x-mx)**2 for x in xs)
+    slope=sum((x-mx)*(y-my) for x,y in zip(xs,ys))/variance if variance else 0
+    estimate=max(0,min(100,my+slope*(float(current_percent)-mx)))
+    nearest=sorted(samples,key=lambda x:abs(float(x["stage1"])-float(current_percent)))[:25]
+    analog=mean(float(x["final"]) for x in nearest)
+    return {"estimate":round(.6*estimate+.4*analog,2),"sample_count":len(samples),"analog_count":len(nearest)}
+
+def forecast(data, period_id, level="period", method="baseline", reference=None):
     if method not in ("baseline","adaptive"): raise ValueError("Unknown forecast method")
     periods={x["period_id"]:x for x in data["academic_periods"]}
     if period_id not in periods: raise ValueError("Period not found")
@@ -85,6 +97,12 @@ def forecast(data, period_id, level="period", method="baseline"):
         recent=r.get("recent_assessment_score")
         baseline=current if recent is None else .8*current+.2*float(recent)
         estimate=max(lo,min(hi,baseline))
+        # External outcomes only temper the personal estimate. They never replace
+        # the user's own history and never relax year/program coverage rules.
+        reference_projection=historical_projection(current,reference) if level=="period" else None
+        if reference_projection:
+            historical_on_scale=lo+(hi-lo)*reference_projection["estimate"]/100
+            estimate=.75*estimate+.25*historical_on_scale
         components=[c for c in data.get("assessment_components",[]) if c["performance_id"]==r["performance_id"]]
         adaptive_signals=[]
         if method=="adaptive":
@@ -130,7 +148,7 @@ def forecast(data, period_id, level="period", method="baseline"):
         signals=list(adaptive_signals)
         if r.get("attendance") is not None and float(r["attendance"])<75:signals.append("Attendance below illustrative 75% threshold")
         if r.get("assignments_total") and (r.get("assignments_completed") or 0)<r["assignments_total"]:signals.append("There are unfinished assignments")
-        estimates.append({"performance_id":r["performance_id"],"course_id":r["course_id"],"grade":estimate,"signals":signals,
+        estimates.append({"performance_id":r["performance_id"],"course_id":r["course_id"],"grade":estimate,"signals":signals,"reference_projection":reference_projection,
                           "credits":r.get("credits"),"workload_value":r.get("workload_value") or r.get("credits"),"workload_unit":r.get("workload_unit") or "credits","current_grade":raw_current,"normalized_current_percent":current,"exams":exam})
     if not estimates: raise ValueError("Numeric current grades required")
     if not school_mode and any(x["workload_value"] is None for x in estimates):
@@ -184,11 +202,19 @@ def forecast(data, period_id, level="period", method="baseline"):
     # 30 academic hours of total student workload. Lessons remain incomparable.
     conversions={"credits":30,"academic_hours":1} if selected_units <= {"credits","academic_hours"} else None
     output=calculate(selected,bands,conversions)
+    ref_datasets=(reference or {}).get("datasets",[])
+    reference_model={"used":bool(reference and level=="period"),"datasets":ref_datasets,
+                     "local_summary":(reference or {}).get("local_summary",[]),
+                     "blend_weight":0.25 if reference and level=="period" else 0,
+                     "note":"External outcomes temper only the nearest-period estimate; they never unlock year or program forecasts"}
     return {**output,"level":level,"period_id":period_id,"subjects":estimates,"coverage":coverage,
-            "method_version":"adaptive-forecast-v1" if method=="adaptive" else "conservative-baseline-v1","is_illustrative":True,
-            "assumption":"Unobserved future work follows the weighted performance observed so far",
-            "limitations":["Not trained or validated on student outcomes","Not a guaranteed result",
-                           "Year/program averages assume comparable future subject and credit distribution",
+            "method_version":"adaptive-reference-v2" if method=="adaptive" else "baseline-reference-v2","is_illustrative":True,
+            "confidence":"low" if coverage.get("current_subjects",0)<3 or level=="period" else "medium",
+            "reference_model":reference_model,
+            "assumption":"Unobserved future work follows personal performance, conservatively tempered by anonymized historical outcomes",
+            "limitations":["Not a guaranteed result","External data comes from Portuguese secondary schools and may not transfer to another institution",
+                           "External data does not substitute for missing personal periods",
+                           "Year/program forecasts remain locked until personal coverage thresholds are met",
                            "No statistical confidence interval is claimed"]}
 
 

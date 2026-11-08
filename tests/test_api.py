@@ -3,15 +3,30 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
-from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, admin_page, app
+from app.academics import historical_projection
+from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, admin_page, admin_assistant, app
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
 class APITests(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):limits.clear();used_plans.clear();os.environ["AI_ENCRYPTION_KEY"]=Fernet.generate_key().decode()
+ async def test_admin_assistant_understands_its_russian_example(self):
+  admin={"token":"admin","account_id":"root","student_id":10,"role":"admin"}
+  with patch("app.main.admin_read",AsyncMock(return_value={"items":[{"student_id":1}]})) as read:
+   result=await admin_assistant(Chat(message="покажи всех студентов",locale="ru"),admin)
+   self.assertEqual(result["kind"],"table");self.assertEqual(result["entity"],"students")
+   read.assert_awaited_once()
+ async def test_historical_projection_is_bounded_and_requires_enough_samples(self):
+  samples=[{"stage1":x,"final":min(100,x+5)} for x in range(20,100,3)]
+  result=historical_projection(70,{"samples":samples})
+  self.assertIsNotNone(result);self.assertGreaterEqual(result["estimate"],0);self.assertLessEqual(result["estimate"],100)
+  self.assertIsNone(historical_projection(70,{"samples":samples[:5]}))
+ async def test_api_settings_has_no_redundant_logout(self):
+  html=admin_page()
+  self.assertNotIn('id="logout"',html);self.assertIn("Вернуться в Perfecta",html)
  async def test_application_shell(self):
   html=application_page()
-  for marker in ("Академический калькулятор","Режим администратора","FIGMA_ACCENTS","fillWithAI","confirmAIChanges"):self.assertIn(marker,html)
+  for marker in ("Академический калькулятор","Режим администратора","FIGMA_ACCENTS","fillWithAI","confirmAIChanges","Прогнозирование",'data-colorblind="true"'):self.assertIn(marker,html)
  async def test_first_login_uses_supported_device_language_with_english_fallback(self):
   html=application_page()
   for marker in ("navigator.languages","SUPPORTED_LANGUAGES","return'en'","perfecta_language_user_selected","Device language preference was not saved"):self.assertIn(marker,html)
