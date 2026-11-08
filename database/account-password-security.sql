@@ -11,7 +11,7 @@ as $function$
 declare
   a public.accounts;
   credentials private.account_credentials%rowtype;
-  current_token_hash text;
+  current_session_hash text;
 begin
   a := private.api_account(p_token);
   select * into credentials
@@ -35,9 +35,9 @@ begin
   set password_hash=extensions.crypt(p_new_password,extensions.gen_salt('bf',10))
   where account_id=a.account_id;
 
-  current_token_hash := encode(extensions.digest(p_token,'sha256'),'hex');
+  current_session_hash := encode(extensions.digest(p_token,'sha256'),'hex');
   delete from private.login_sessions
-  where account_id=a.account_id and token_hash<>current_token_hash;
+  where account_id=a.account_id and session_hash<>current_session_hash;
 
   return jsonb_build_object('changed',true,'other_sessions_revoked',true);
 end
