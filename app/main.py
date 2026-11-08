@@ -456,13 +456,23 @@ def normalize_ai_locale(locale):
 def ai_phrase(locale,ru,kk,en,zh=None,es=None):
     return {"ru":ru,"kk":kk,"en":en,"zh":zh or en,"es":es or en}.get(normalize_ai_locale(locale),ru)
 
+def ai_scoped_context(data):
+    """Return only the current student's records that are safe and relevant to the model."""
+    allowed=("academic_settings","academic_years","academic_periods","courses","academic_performance","grading_scales","grading_bands")
+    context={key:list(data.get(key) or []) for key in allowed}
+    student_rows=data.get("students") or []
+    student_id=student_rows[0].get("student_id") if student_rows else None
+    referenced_course_ids={row.get("course_id") for row in context["academic_performance"] if row.get("course_id") is not None}
+    context["courses"]=[course for course in context["courses"] if course.get("course_id") in referenced_course_ids or (student_id is not None and course.get("owner_student_id")==student_id)]
+    return context
+
 async def plan_actions(message,data,c,locale="ru"):
     if not c or not c.get("enabled") or not c.get("encrypted_key"):raise HTTPException(503,"AI is not configured")
     base_url=normalize_provider_url(c["base_url"]);validate_provider(base_url)
     try:key=cipher().decrypt(c["encrypted_key"].encode()).decode()
     except InvalidToken:raise HTTPException(503,"AI key could not be decrypted")
     # Never send names/emails, secrets, session tokens, or admin-wide data to a model.
-    context={k:v for k,v in data.items() if k in ("academic_settings","academic_years","academic_periods","courses","academic_performance","grading_scales","grading_bands")}
+    context=ai_scoped_context(data)
     context_text=json.dumps(context,ensure_ascii=False)
     if len(context_text)>18000:raise HTTPException(413,"Слишком большой учебный контекст для ИИ. Используйте один период или локальный режим.")
     language_name=AI_LANGUAGES.get(locale,AI_LANGUAGES.get(normalize_ai_locale(locale),"Russian"))
