@@ -30,7 +30,7 @@ class AcademicTests(unittest.TestCase):
   d["assessments"]=[{"assessment_id":1,"component_id":1,"maximum_score":100,"due_at":"2026-01-01"},{"assessment_id":2,"component_id":1,"maximum_score":100,"due_at":"2026-02-01"}]
   d["assessment_results"]=[{"assessment_id":1,"status":"graded","score":60},{"assessment_id":2,"status":"graded","score":90}]
   r=forecast(d,1,method="adaptive")
-  self.assertEqual(r["method_version"],"adaptive-forecast-v1")
+  self.assertEqual(r["method_version"],"adaptive-reference-v2")
   self.assertTrue(any("Adaptive data points" in x for x in r["subjects"][0]["signals"]))
  def test_school_five_point_average_is_not_gpa(self):
   r=calculate([{"grade":5,"workload_value":2,"workload_unit":"lessons"},{"grade":4,"workload_value":1,"workload_unit":"lessons"}])
