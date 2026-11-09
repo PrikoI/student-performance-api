@@ -267,6 +267,11 @@ class APITests(unittest.IsolatedAsyncioTestCase):
  async def test_forecast_modal_renders_directly_in_each_language(self):
   html=application_page()
   for marker in ("const FORECAST_FORM=","function forecastForm()","New forecast","Жаңа болжам","新建预测","Nuevo pronóstico","forecastForm().done"):self.assertIn(marker,html)
+ async def test_forecast_and_history_share_one_navigation_section(self):
+  html=application_page()
+  self.assertNotIn('data-view="history"',html)
+  self.assertIn("function predictionHistoryHtml(",html)
+  self.assertIn("Для годового прогноза нужно не менее ${expected?Math.ceil(expected*2/3)",html)
 if __name__=="__main__":unittest.main()
 
 
