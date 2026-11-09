@@ -294,6 +294,13 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertIn('request.url.path=="/logo.png"',source)
   self.assertIn('max-age=604800',source)
   self.assertIn('else "no-store"',source)
+ async def test_bootstrap_opens_shell_before_slow_data_requests(self):
+  html=application_page()
+  self.assertIn("state.me=await api('/me','GET',undefined,15000)",html)
+  self.assertIn("state.data={};state.avatar=null;showAuthenticatedShell();try{",html)
+  self.assertIn("const [loadedData,avatarResponse]=await Promise.all",html)
+  self.assertIn("Background account loading failed",html)
+  self.assertIn("new AbortController()",html)
 if __name__=="__main__":unittest.main()
 
 
