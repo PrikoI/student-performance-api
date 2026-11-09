@@ -88,7 +88,9 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
     if float(settings["grade_max"]) <= float(settings["grade_min"]):
         raise ValueError("Numeric grading scale required")
     school_mode=settings.get("calendar_type")=="quarter" or settings.get("grading_scale")=="five_point"
-    lo,hi=float(settings["grade_min"]),float(settings["grade_max"])
+    # School marks are normalized to percentages before forecasting. Keep the
+    # forecast scale in the same 0–100 space instead of clamping 5 to 5%.
+    lo,hi=(0.0,100.0) if school_mode else (float(settings["grade_min"]),float(settings["grade_max"]))
     records=[x for x in data["academic_performance"] if x["period_id"]==period["period_id"]]
     if not records: raise ValueError("No academic records in this period")
     bands=[b for b in data.get("grading_bands",[]) if b["scale_id"]==settings.get("scale_id")]
