@@ -140,6 +140,11 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   data={"academic_periods":[{"period_id":1,"period_number":1,"status":"completed","settings_id":1},{"period_id":2,"period_number":2,"status":"active","settings_id":1}],"academic_settings":[{"settings_id":1,"calendar_type":"quarter"}],"academic_performance":[{"period_id":1,"course_id":1,"current_grade":5,"workload_unit":"lessons","workload_value":24}],"courses":[{"course_id":1,"course_name":"Алгебра"}]}
   answer=deterministic_actions("Покажи средний балл",data)[0]["text"]
   self.assertIn("92.5%",answer);self.assertNotIn("Недостаточно",answer)
+ async def test_named_subject_question_returns_only_that_subject(self):
+  data={"academic_periods":[{"period_id":1,"status":"completed"}],"academic_performance":[{"period_id":1,"course_id":1,"current_grade":10,"credits":5},{"period_id":1,"course_id":2,"current_grade":91,"credits":5}],"courses":[{"course_id":1,"course_name":"Introduction to Programming 1"},{"course_id":2,"course_name":"Information and Communication Technologies"}]}
+  self.assertIsNone(deterministic_actions("Что скажешь о моей оценке по программированию?",data))
+  answer=deterministic_actions("What is my grade for Programming?",data)[0]["text"]
+  self.assertIn("Programming",answer);self.assertIn("10",answer);self.assertNotIn("Technologies",answer)
  async def test_public_ai_error_hides_technical_detail(self):
   response={"results":[{"index":0,"status":"failed","detail":"constraint 23514 secret internals"}]}
   public=public_ai_response(response,"ru")
@@ -154,7 +159,11 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   body=Chat(message="67",history=[{"role":"assistant","content":"Назовите оценку"}])
   self.assertEqual(body.history[0].role,"assistant")
   html=application_page();self.assertIn("conversation_history",Path("app/main.py").read_text(encoding="utf-8"))
-  self.assertIn("slice(0,-2)",html);self.assertIn("history},105000",html)
+  self.assertIn("slice(0,-2)",html);self.assertIn("history,session_id:state.currentChatId",html)
+ async def test_persistent_chat_ui_defaults_to_ai_and_has_sessions(self):
+  html=application_page()
+  self.assertIn("assistantMode:'ai'",html);self.assertIn("/ai/sessions",html)
+  self.assertIn("С ИИ",html);self.assertIn("История чатов пока пуста",html)
  async def test_failed_ai_step_is_logged_as_failed(self):
   response={"results":[{"index":0,"status":"failed","detail":"No academic records"}],"max_actions":5}
   with patch("app.main.all_data",AsyncMock(return_value={})),patch("app.main.deterministic_actions",return_value=[{"operation":"predict"}]),patch("app.main.execute_actions",AsyncMock(return_value=response)),patch("app.main.log_ai_interaction",AsyncMock()) as logger:
@@ -336,5 +345,6 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertIn("Background account loading failed",html)
   self.assertIn("new AbortController()",html)
 if __name__=="__main__":unittest.main()
+
 
 
