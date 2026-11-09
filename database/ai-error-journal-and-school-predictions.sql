@@ -16,6 +16,20 @@ alter table private.ai_error_logs enable row level security;
 create index if not exists ai_error_logs_interaction_idx on private.ai_error_logs(interaction_id);
 create index if not exists ai_error_logs_student_created_idx on private.ai_error_logs(student_id,created_at desc);
 
+-- Preserve earlier failures in the new structured journal as well.
+insert into private.ai_error_logs(interaction_id,student_id,phase,operation,error_code,safe_message,details,created_at)
+select l.interaction_id,l.student_id,l.phase,l.action_plan->0->>'operation',
+  case when l.outcome ? 'error' then 'request_failure' else 'action_failure' end,
+  left(coalesce(l.outcome->>'error',failed.item->>'detail','AI action failed'),500),
+  jsonb_build_object('failed_result',failed.item),l.created_at
+from private.ai_interaction_logs l
+left join lateral (
+  select value as item from jsonb_array_elements(coalesce(l.outcome->'results','[]'::jsonb))
+  where value->>'status' in ('failed','skipped_after_failure') limit 1
+) failed on true
+where (l.status='failed' or failed.item is not null)
+  and not exists(select 1 from private.ai_error_logs e where e.interaction_id=l.interaction_id);
+
 create or replace function private.log_ai_interaction(p_session_token text, p_payload jsonb)
 returns bigint
 language plpgsql
