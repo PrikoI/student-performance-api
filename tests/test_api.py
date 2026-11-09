@@ -264,6 +264,9 @@ class APITests(unittest.IsolatedAsyncioTestCase):
  async def test_forecast_history_uses_compact_expandable_cards(self):
   html=application_page()
   for marker in ("function predictionContext(","function openPrediction(","prediction-history-card","Посмотреть детали","onclick=\"openPrediction("):self.assertIn(marker,html)
+ async def test_forecast_modal_renders_directly_in_each_language(self):
+  html=application_page()
+  for marker in ("const FORECAST_FORM=","function forecastForm()","New forecast","Жаңа болжам","新建预测","Nuevo pronóstico","forecastForm().done"):self.assertIn(marker,html)
 if __name__=="__main__":unittest.main()
 
 
