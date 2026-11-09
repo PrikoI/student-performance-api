@@ -124,7 +124,7 @@ class AcademicSetup(Strict):
     start_year:int=Field(ge=1950,le=2200)
 class Prediction(Strict):
     period_id:int
-    level:Literal["period","year","program"]="period"
+    level:Literal["period","next_period","year","program"]="period"
     method:Literal["baseline","adaptive"]="baseline"
     save:bool=False
 class Calculation(Strict):
@@ -722,7 +722,7 @@ def deterministic_actions(message,data,locale="ru"):
     add(r"посещ|attendance",{"operation":"answer","text":ai_phrase(locale,"Посещаемость с учётом уважительных пропусков: "+", ".join(attendance) if attendance else "Для расчёта посещаемости недостаточно данных.","Сабаққа қатысу (дәлелді себептер ескерілді): "+", ".join(attendance) if attendance else "Қатысуды есептеу үшін дерек жеткіліксіз.","Attendance including excused absences: "+", ".join(attendance) if attendance else "There is not enough data to calculate attendance.")})
     subjects=[f"{courses.get(r.get('course_id'),'Предмет')} — {r.get('current_grade') if r.get('current_grade') is not None else 'без оценки'}" for r in rows]
     add(r"предмет|курс|оценк|subject|course|grade",{"operation":"answer","text":ai_phrase(locale,"Предметы текущего периода: "+"; ".join(subjects) if subjects else "В текущем периоде нет предметов.","Ағымдағы кезең пәндері: "+"; ".join(subjects) if subjects else "Ағымдағы кезеңде пәндер жоқ.","Subjects in the current period: "+"; ".join(subjects) if subjects else "There are no subjects in the current period.")})
-    add(r"прогноз|predict|forecast",{"operation":"predict","level":"period"})
+    add(r"прогноз|predict|forecast",{"operation":"predict","level":"next_period"})
     if not found:return None
     # De-duplicate overlapping intents while preserving the user's order.
     out=[];seen=set()
@@ -882,7 +882,7 @@ def prepared_action(action,data,locale="ru"):
         a["data"]={"setup":setup,"subjects":cleaned}
     elif op=="predict":
         level=a.get("level","period")
-        if level not in ("period","year","program"):raise ValueError("Unknown prediction level")
+        if level not in ("period","next_period","year","program"):raise ValueError("Unknown prediction level")
         period=a.get("period_id")
         a["period_id"]=period if owned_id(data,"academic_periods","period_id",period) else current_period_id(data)
         a["level"]=level
