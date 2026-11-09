@@ -42,7 +42,7 @@ async def guard(request:Request,call_next):
     body=await request.body()
     if len(body)>131072:return HTMLResponse("Request too large",413)
     response=await call_next(request)
-    response.headers["Cache-Control"]="no-store"
+    response.headers["Cache-Control"]="public, max-age=604800, immutable" if request.url.path=="/logo.png" else "no-store"
     response.headers["X-Content-Type-Options"]="nosniff"
     response.headers["Referrer-Policy"]="no-referrer"
     return response
