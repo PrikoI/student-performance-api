@@ -144,9 +144,13 @@ class AISettings(Strict):
     model:str=Field(min_length=1,max_length=150)
     api_key:SecretStr|None=None
     enabled:bool=False
+class ChatTurn(Strict):
+    role:Literal["user","assistant"]
+    content:str=Field(min_length=1,max_length=2000)
 class Chat(Strict):
     message:str=Field(min_length=1,max_length=6000)
     locale:Literal["ru","kk","en","zh","es","zh-CN","zh-TW"]="ru"
+    history:list[ChatTurn]=Field(default_factory=list,max_length=8)
 class ExecutePlan(Strict):
     confirmation_token: str=Field(max_length=30000)
 class CurrentPassword(Strict):
@@ -542,7 +546,7 @@ def ai_scoped_context(data):
     context["courses"]=[course for course in context["courses"] if course.get("course_id") in referenced_course_ids or (student_id is not None and course.get("owner_student_id")==student_id)]
     return context
 
-async def plan_actions(message,data,c,locale="ru"):
+async def plan_actions(message,data,c,locale="ru",history=None):
     if not c or not c.get("enabled") or not c.get("encrypted_key"):raise HTTPException(503,"AI is not configured")
     base_url=normalize_provider_url(c["base_url"]);validate_provider(base_url)
     try:key=cipher().decrypt(c["encrypted_key"].encode()).decode()
@@ -562,6 +566,7 @@ Allowed action objects:
 {"operation":"calculate","mode":"average","calendar":"trimester","items":[]}
 {"operation":"answer","text":"..."}
 {"operation":"clarify","questions":["..."],"draft":{"course_name":"...","current_grade":null,"workload_value":null,"workload_unit":"credits","attendance":null}}
+Every valid response MUST contain at least one action. For greetings, casual conversation, arithmetic, explanations and other requests that need no application tool, return exactly one answer action. Never return an empty actions array for an ordinary request. A standalone number has no meaning unless the immediately preceding conversation clearly asked for that number; otherwise ask what it refers to with an answer action and do not predict or write anything.
 For the current period, OMIT period_id: the server resolves it safely. To add a new subject, always use create_subject rather than separate course and performance writes.
 Never invent record IDs. Use only IDs present in academic_records. Never request another person's data, SQL, URLs, credentials, account roles or admin actions.
 For a complete school profile with school, class, academic year, calendar and many subject grades, use ONE import_profile action. Preserve five-point final grades as current_grade 2–5 and grade_text. Preserve every parsed subject. Each subject may have its own workload_value and workload_unit; lesson counts use workload_unit lessons. Apply common_workload only when the user explicitly gives one common value. If some workloads are missing, ask one grouped question listing only those subjects. On a follow-up, merge lesson counts into subjects by course name, including common Russian inflections, and keep the import_profile operation. If a write request lacks a subject name, grade, workload value/unit, or an available academic period, return clarify with one question per missing field. Do not guess missing values. Preserve the user's wording in draft and explain what will be saved.
@@ -577,8 +582,9 @@ Writes require user confirmation in the application.'''.replace('{language_name}
         async with httpx.AsyncClient(timeout=40,follow_redirects=False) as client:
             headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"}
             if urlparse(base_url).hostname=="openrouter.ai":headers|={"HTTP-Referer":"https://student-performance-api-ee1k.onrender.com","X-Title":"Student Performance"}
+            safe_history=[{"role":turn.role,"content":turn.content} for turn in (history or [])]
             request_body={"model":c["model"],"messages":[{"role":"system","content":prompt},
-                {"role":"user","content":json.dumps({"request":message,"academic_records":json.loads(context_text)},ensure_ascii=False)}],
+                {"role":"user","content":json.dumps({"conversation_history":safe_history,"request":message,"academic_records":json.loads(context_text)},ensure_ascii=False)}],
                 "max_tokens":1200,"temperature":0,"response_format":{"type":"json_object"}}
             r=await client.post(base_url+"/chat/completions",headers=headers,json=request_body)
             if r.status_code in (400,422) and "response_format" in safe_provider_error(r).casefold():
@@ -593,7 +599,11 @@ Writes require user confirmation in the application.'''.replace('{language_name}
     except httpx.HTTPError as e:raise HTTPException(502,f"Could not reach AI provider: {type(e).__name__}")
     except (KeyError,ValueError,TypeError,json.JSONDecodeError):raise HTTPException(502,"AI returned an invalid action plan. Choose a model with JSON output support or retry.")
     actions=plan.get("actions")
-    if not isinstance(actions,list) or not 1<=len(actions)<=5:raise HTTPException(422,"AI plan must contain 1–5 actions")
+    if not isinstance(actions,list):raise HTTPException(422,"AI plan must contain an actions array")
+    if not actions:
+        fallback=plan.get("answer") or ai_phrase(locale,"Уточните, пожалуйста, что вы хотите узнать или изменить.","Нені білгіңіз немесе өзгерткіңіз келетінін нақтылаңыз.","Please clarify what you want to know or change.","请说明您想了解或更改什么。","Aclara qué quieres saber o cambiar.")
+        actions=[{"operation":"answer","text":str(fallback)[:2000]}]
+    if len(actions)>5:raise HTTPException(422,"AI plan must contain no more than 5 actions")
     return actions
 
 def deterministic_actions(message,data,locale="ru"):
@@ -601,6 +611,16 @@ def deterministic_actions(message,data,locale="ru"):
     """Handle common reads and complete education-profile imports locally."""
     import re
     text=message.casefold()
+    if re.fullmatch(r"\s*(привет|здравствуй(?:те)?|добрый\s+(?:день|вечер)|hello|hi|сәлем|hola|你好)[!.?\s]*",text):
+        return [{"operation":"answer","text":ai_phrase(locale,"Привет! Чем помочь с вашими учебными данными?","Сәлем! Оқу деректеріңіз бойынша қалай көмектесейін?","Hello! How can I help with your academic data?","你好！我能如何帮助您处理学习数据？","¡Hola! ¿Cómo puedo ayudarte con tus datos académicos?")}]
+    if re.fullmatch(r"\s*(как дела|how are you|қалайсың|qué tal|你好吗)[!.?\s]*",text):
+        return [{"operation":"answer","text":ai_phrase(locale,"Всё хорошо — готов помочь с Perfecta и вашими учебными данными.","Жақсы — Perfecta және оқу деректеріңіз бойынша көмектесуге дайынмын.","I'm doing well and ready to help with Perfecta and your academic data.","我很好，随时可以帮助您使用 Perfecta 和处理学习数据。","Estoy bien y listo para ayudarte con Perfecta y tus datos académicos.")}]
+    arithmetic=re.fullmatch(r"\s*(-?\d+(?:[.,]\d+)?)\s*([+\-*/])\s*(-?\d+(?:[.,]\d+)?)\s*[?=]?\s*",text)
+    if arithmetic:
+        left,operator,right=float(arithmetic.group(1).replace(",",".")),arithmetic.group(2),float(arithmetic.group(3).replace(",","."))
+        if operator=="/" and right==0:return [{"operation":"answer","text":ai_phrase(locale,"На ноль делить нельзя.","Нөлге бөлуге болмайды.","Division by zero is not allowed.","不能除以零。","No se puede dividir entre cero.")}]
+        value={"+":lambda:left+right,"-":lambda:left-right,"*":lambda:left*right,"/":lambda:left/right}[operator]()
+        return [{"operation":"answer","text":f"{arithmetic.group(1)} {operator} {arithmetic.group(3)} = {value:g}"}]
     profile=re.search(r"учебн(?:ый|ого)\s+год\s*:\s*(20\d{2})\s*[–-]\s*(20\d{2})",text)
     if "предыдущий черновик данных:" in text:
         try:
@@ -777,9 +797,13 @@ async def chat(body:Chat,me=Depends(identity)):
         async with asyncio.timeout(90):
             data=await all_data(me)
             # Local parsers handle exact structured imports; the model handles semantic inference.
-            actions=deterministic_actions(body.message,data,body.locale) or await plan_actions(body.message,data,await config(me),body.locale)
+            if body.message.strip().replace(",",".").replace(".","",1).isdigit() and not body.history:
+                actions=[{"operation":"answer","text":ai_phrase(body.locale,"Уточните, пожалуйста, что означает это число.","Бұл сан нені білдіретінін нақтылаңыз.","Please clarify what this number refers to.","请说明这个数字代表什么。","Aclara a qué se refiere este número.")}]
+            else:
+                actions=deterministic_actions(body.message,data,body.locale) or await plan_actions(body.message,data,await config(me),body.locale,body.history)
             response=await execute_actions(actions,me,False,body.locale)
-            status="clarification" if response.get("status")=="clarification_required" else "planned" if response.get("status")=="confirmation_required" else "completed"
+            failed=any(item.get("status") not in ("ok","clarification_required") for item in response.get("results",[]))
+            status="failed" if failed else "clarification" if response.get("status")=="clarification_required" else "planned" if response.get("status")=="confirmation_required" else "completed"
             await log_ai_interaction(me,"plan",body.locale,status,body.message,actions,response)
             return response
     except Exception as exc:
