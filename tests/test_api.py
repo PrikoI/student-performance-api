@@ -251,6 +251,19 @@ class APITests(unittest.IsolatedAsyncioTestCase):
  async def test_mobile_drawer_is_vertical_and_closable(self):
   html=application_page()
   for marker in ('class="mobile-sidebar-close"','.sidebar .nav{display:grid!important','overflow-y:auto!important','.sidebar .profile{display:flex!important'):self.assertIn(marker,html)
+ async def test_admin_academic_rows_use_actual_workload_unit(self):
+  html=application_page()
+  self.assertIn("function adminAcademicRows(",html)
+  self.assertIn("academic_hours:'Академические часы'",html)
+  self.assertIn("lessons:'Уроки'",html)
+  self.assertNotIn("Кредиты:x.credits",html)
+ async def test_forecast_subjects_use_profile_workload_unit(self):
+  html=application_page()
+  self.assertIn("academic_hours:t.hours,lessons:t.lessons",html)
+  self.assertIn("s.workload_value??s.credits",html)
+ async def test_forecast_history_uses_compact_expandable_cards(self):
+  html=application_page()
+  for marker in ("function predictionContext(","function openPrediction(","prediction-history-card","Посмотреть детали","onclick=\"openPrediction("):self.assertIn(marker,html)
 if __name__=="__main__":unittest.main()
 
 
