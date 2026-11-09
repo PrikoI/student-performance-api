@@ -28,6 +28,10 @@ class APITests(unittest.IsolatedAsyncioTestCase):
  async def test_api_settings_has_no_redundant_logout(self):
   html=admin_page()
   self.assertNotIn('id="logout"',html);self.assertIn("Вернуться в Perfecta",html)
+ async def test_completed_period_remains_visible_and_admin_uses_course_names(self):
+  html=application_page()
+  self.assertIn("function displayPeriod()",html)
+  self.assertIn("courseNames.get(x.course_id)",html)
  async def test_application_shell(self):
   html=application_page()
   for marker in ("Академический калькулятор","Режим администратора","FIGMA_ACCENTS","fillWithAI","confirmAIChanges","Прогнозирование",'data-colorblind="true"',"boot-brand-logo","Университет — триместры","Школа — четверти"):self.assertIn(marker,html)
