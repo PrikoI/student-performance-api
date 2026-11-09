@@ -156,6 +156,8 @@ class PasswordChange(CurrentPassword):
 class Delete(CurrentPassword):
     current_password:SecretStr
     confirm:bool=False
+class Avatar(Strict):
+    image_data:str=Field(min_length=20,max_length=1500000)
 
 @app.get("/health")
 def health():return {"status":"ok","version":"1.0.0"}
@@ -252,6 +254,15 @@ async def delete_account(body:Delete,me=Depends(identity)):
     return {"deleted":True,"student_id":deleted.get("student_id")}
 @app.get("/me")
 async def profile(me=Depends(identity)):return {k:v for k,v in me.items() if k!="token"}
+@app.get("/avatar/{student_id}")
+async def get_avatar(student_id:int,me=Depends(identity)):
+    return await rpc("api_avatar",{"p_token":me["token"],"p_student_id":student_id,"p_image_data":None})
+@app.put("/avatar")
+async def put_avatar(body:Avatar,me=Depends(identity)):
+    return await rpc("api_avatar",{"p_token":me["token"],"p_student_id":me["student_id"],"p_image_data":body.image_data})
+@app.delete("/avatar")
+async def delete_avatar(me=Depends(identity)):
+    return await rpc("api_avatar",{"p_token":me["token"],"p_student_id":me["student_id"],"p_image_data":""})
 @app.get("/data")
 async def all_data(me=Depends(identity)):return await rpc("get_student_data",{"p_session_token":me["token"]})
 
