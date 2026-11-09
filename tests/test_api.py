@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
-from app.academics import historical_projection
+from app.academics import historical_projection, forecast
 from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, admin_page, admin_assistant, app
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
@@ -16,6 +16,10 @@ class APITests(unittest.IsolatedAsyncioTestCase):
    result=await admin_assistant(Chat(message="покажи всех студентов",locale="ru"),admin)
    self.assertEqual(result["kind"],"table");self.assertEqual(result["entity"],"students")
    read.assert_awaited_once()
+ async def test_next_period_forecast_reads_completed_period_records(self):
+  data={"academic_periods":[{"period_id":1,"year_id":1,"settings_id":1,"period_number":1,"status":"completed"},{"period_id":2,"year_id":1,"settings_id":1,"period_number":2,"status":"active"}],"academic_settings":[{"settings_id":1,"calendar_type":"trimester","grading_scale":"percentage","grade_min":0,"grade_max":100,"scale_id":1}],"academic_performance":[{"performance_id":7,"period_id":1,"course_id":3,"current_grade":80,"credits":5,"workload_value":5,"workload_unit":"credits"}],"grading_bands":[],"actual_results":[]}
+  result=forecast(data,2,"next_period","baseline",{"samples":[{"stage1":x,"final":x} for x in range(20,100,3)],"datasets":[]})
+  self.assertEqual(result["period_id"],2);self.assertEqual(result["source_period_id"],1);self.assertEqual(result["subjects"][0]["performance_id"],7)
  async def test_historical_projection_is_bounded_and_requires_enough_samples(self):
   samples=[{"stage1":x,"final":min(100,x+5)} for x in range(20,100,3)]
   result=historical_projection(70,{"samples":samples})
