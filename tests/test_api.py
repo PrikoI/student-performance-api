@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from app.academics import historical_projection, forecast
-from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, admin_page, admin_assistant, app
+from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, admin_page, admin_assistant, app
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -278,6 +278,15 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertIn("const [loadedData,avatarResponse]=agreement.required?[{},null]:await Promise.all",html)
   self.assertIn("api('/tables/user_preferences','POST'",html)
   self.assertNotIn("try{await api('/tables/user_preferences'",html)
+ async def test_logo_is_shared_cached_asset_not_repeated_base64(self):
+  html=application_page()
+  self.assertEqual(html.count('/logo.png'),5)
+  self.assertNotIn('data:image/png;base64,',html)
+  self.assertLess(len(html.encode('utf-8')),500000)
+  response=application_logo()
+  self.assertEqual(response.media_type,'image/png')
+  self.assertIn('max-age=604800',response.headers['cache-control'])
+  self.assertTrue(response.path.endswith('logo.png'))
 if __name__=="__main__":unittest.main()
 
 

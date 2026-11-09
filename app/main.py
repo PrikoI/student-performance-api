@@ -14,7 +14,7 @@ from pathlib import Path
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import FastAPI, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, ConfigDict, SecretStr
@@ -166,6 +166,8 @@ def health():return {"status":"ok","version":"1.0.0"}
 def application_page():return Path(__file__).with_name("app.html").read_text(encoding="utf-8")
 @app.head("/")
 def application_head():return HTMLResponse("")
+@app.get("/logo.png",response_class=FileResponse)
+def application_logo():return FileResponse(Path(__file__).with_name("logo.png"),media_type="image/png",headers={"Cache-Control":"public, max-age=604800, immutable"})
 
 def auth_secret():
     value=os.getenv("AUTH_INTERNAL_SECRET")
