@@ -75,10 +75,15 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
     if method not in ("baseline","adaptive"): raise ValueError("Unknown forecast method")
     periods={x["period_id"]:x for x in data["academic_periods"]}
     if period_id not in periods: raise ValueError("Period not found")
-    period=periods[period_id]
+    target_period=periods[period_id]
     today=date.today().isoformat()
-    if period["status"]!="active" or period.get("start_date") and period["start_date"]>today or period.get("end_date") and period["end_date"]<today:
-        raise ValueError("Forecasts are restricted to an active current period")
+    if target_period["status"]!="active" or target_period.get("start_date") and target_period["start_date"]>today or target_period.get("end_date") and target_period["end_date"]<today:
+        raise ValueError("Forecasts require an active target period")
+    period=target_period
+    if level=="next_period":
+        previous=[p for p in periods.values() if p.get("year_id")==target_period.get("year_id") and p.get("status")=="completed" and (p.get("period_number") or 0)<(target_period.get("period_number") or 0)]
+        if not previous:raise ValueError("A completed previous period is required for the next-period forecast")
+        period=max(previous,key=lambda p:p.get("period_number") or 0)
     settings=next(x for x in data["academic_settings"] if x["settings_id"]==period["settings_id"])
     if float(settings["grade_max"]) <= float(settings["grade_min"]):
         raise ValueError("Numeric grading scale required")
@@ -99,7 +104,7 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
         estimate=max(lo,min(hi,baseline))
         # External outcomes only temper the personal estimate. They never replace
         # the user's own history and never relax year/program coverage rules.
-        reference_projection=historical_projection(current,reference) if level=="period" else None
+        reference_projection=historical_projection(current,reference) if level in ("period","next_period") else None
         if reference_projection:
             historical_on_scale=lo+(hi-lo)*reference_projection["estimate"]/100
             estimate=.75*estimate+.25*historical_on_scale
@@ -203,11 +208,11 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
     conversions={"credits":30,"academic_hours":1} if selected_units <= {"credits","academic_hours"} else None
     output=calculate(selected,bands,conversions)
     ref_datasets=(reference or {}).get("datasets",[])
-    reference_model={"used":bool(reference and level=="period"),"datasets":ref_datasets,
+    reference_model={"used":bool(reference and level in ("period","next_period")),"datasets":ref_datasets,
                      "local_summary":(reference or {}).get("local_summary",[]),
-                     "blend_weight":0.25 if reference and level=="period" else 0,
+                     "blend_weight":0.25 if reference and level in ("period","next_period") else 0,
                      "note":"External outcomes temper only the nearest-period estimate; they never unlock year or program forecasts"}
-    return {**output,"level":level,"period_id":period_id,"subjects":estimates,"coverage":coverage,
+    return {**output,"level":level,"period_id":target_period["period_id"],"source_period_id":period["period_id"],"subjects":estimates,"coverage":coverage,
             "method_version":"adaptive-reference-v2" if method=="adaptive" else "baseline-reference-v2","is_illustrative":True,
             "confidence":"low" if coverage.get("current_subjects",0)<3 or level=="period" else "medium",
             "reference_model":reference_model,
