@@ -10,7 +10,7 @@ class FrontendSyntaxTests(unittest.TestCase):
         html=Path("app/app.html").read_text(encoding="utf-8")
         match=re.search(r"<script>([\s\S]*)</script>",html)
         self.assertIsNotNone(match)
-        result=subprocess.run(["node","--check","-"],input=match.group(1),text=True,capture_output=True)
+        result=subprocess.run(["node","--check","-"],input=match.group(1),text=True,encoding="utf-8",capture_output=True)
         self.assertEqual(result.returncode,0,result.stderr)
 
 if __name__=="__main__":
