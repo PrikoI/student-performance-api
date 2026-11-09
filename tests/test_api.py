@@ -287,6 +287,13 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(response.media_type,'image/png')
   self.assertIn('max-age=604800',response.headers['cache-control'])
   self.assertTrue(response.path.endswith('logo.png'))
+ async def test_security_middleware_keeps_logo_cacheable(self):
+  import inspect
+  from app.main import guard
+  source=inspect.getsource(guard)
+  self.assertIn('request.url.path=="/logo.png"',source)
+  self.assertIn('max-age=604800',source)
+  self.assertIn('else "no-store"',source)
 if __name__=="__main__":unittest.main()
 
 
