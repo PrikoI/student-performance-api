@@ -224,8 +224,11 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
                      "local_summary":(reference or {}).get("local_summary",[]),
                      "blend_weight":0.25 if reference and level in ("period","next_period") else 0,
                      "note":"External outcomes temper only the nearest-period estimate; they never unlock year or program forecasts"}
+    adaptive_subjects=sum(any(str(signal).startswith("Adaptive data points:") for signal in item.get("signals",[])) for item in estimates)
+    requested_method="adaptive-reference-v2" if method=="adaptive" else "baseline-reference-v2"
+    effective_method="adaptive-reference-v2" if method=="adaptive" and adaptive_subjects else "baseline-reference-v2"
     return {**output,"level":level,"period_id":target_period["period_id"],"source_period_id":period["period_id"],"subjects":estimates,"coverage":coverage,
-            "method_version":"adaptive-reference-v2" if method=="adaptive" else "baseline-reference-v2","is_illustrative":True,
+            "method_version":requested_method,"effective_method_version":effective_method,"adaptive_subjects":adaptive_subjects,"is_illustrative":True,
             "confidence":"low" if coverage.get("current_subjects",0)<3 or level=="period" else "medium",
             "reference_model":reference_model,
             "assumption":"Unobserved future work follows personal performance, conservatively tempered by anonymized historical outcomes",
