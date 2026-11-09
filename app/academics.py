@@ -161,7 +161,7 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
     if not school_mode and any(x["workload_value"] is None for x in estimates):
         raise ValueError("Workload is required for every included subject")
     if not school_mode and len({x["workload_unit"] for x in estimates})>1:raise ValueError("Different workload units require explicit conversion")
-    selected=[{"grade":x["grade"]} if school_mode else dict(grade=x["grade"],workload_value=x["workload_value"],workload_unit=x["workload_unit"]) for x in estimates]
+    selected=[{"grade":x["grade"],"workload_value":1,"workload_unit":"lessons"} if school_mode else dict(grade=x["grade"],workload_value=x["workload_value"],workload_unit=x["workload_unit"]) for x in estimates]
     coverage={"current_subjects":len(estimates)}
     if level in ("year","program"):
         year=next(x for x in data["academic_years"] if x["year_id"]==period["year_id"])
