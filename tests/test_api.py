@@ -230,6 +230,27 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   html=application_page()
   for marker in ("function avatarMarkup(","/avatar/${state.me.student_id}","api(\'/avatar\',{method:\'PUT\'","api(\'/avatar\',{method:\'DELETE\'","await api(\'/avatar/${studentId}\')","admin-student-avatar"):self.assertIn(marker,html)
   self.assertNotIn("perfecta_avatar_",html)
+ async def test_school_forecast_normalizes_five_point_marks_to_percent(self):
+  data={"academic_periods":[{"period_id":1,"year_id":1,"settings_id":1,"period_number":1,"status":"active"}],"academic_settings":[{"settings_id":1,"calendar_type":"quarter","grading_scale":"five_point","grade_min":2,"grade_max":5,"scale_id":1}],"academic_performance":[{"performance_id":1,"period_id":1,"course_id":1,"current_grade":5,"workload_unit":"lessons","workload_value":24}],"grading_bands":[],"actual_results":[]}
+  result=forecast(data,1,"period","baseline")
+  self.assertEqual(result["average_percent"],100);self.assertEqual(result["subjects"][0]["normalized_current_percent"],100)
+ async def test_adaptive_forecast_uses_graded_work_and_stays_bounded(self):
+  data={"academic_periods":[{"period_id":1,"year_id":1,"settings_id":1,"period_number":1,"status":"active"}],"academic_settings":[{"settings_id":1,"calendar_type":"trimester","grading_scale":"percentage","grade_min":0,"grade_max":100,"scale_id":1}],"academic_performance":[{"performance_id":1,"period_id":1,"course_id":1,"current_grade":70,"credits":5,"workload_value":5,"workload_unit":"credits"}],"grading_bands":[],"actual_results":[],"assessment_components":[{"component_id":1,"performance_id":1,"component_type":"assignment","name":"Assignments","weight_percent":40}],"assessments":[{"assessment_id":1,"component_id":1,"maximum_score":100,"due_at":"2026-01-01"},{"assessment_id":2,"component_id":1,"maximum_score":100,"due_at":"2026-02-01"}],"assessment_results":[{"assessment_id":1,"status":"graded","score":60},{"assessment_id":2,"status":"graded","score":90}]}
+  result=forecast(data,1,"period","adaptive")
+  self.assertEqual(result["method_version"],"adaptive-reference-v2");self.assertGreaterEqual(result["average_percent"],0);self.assertLessEqual(result["average_percent"],100);self.assertTrue(any("Adaptive data points" in x for x in result["subjects"][0]["signals"]))
+ async def test_next_period_forecast_rejects_missing_completed_source(self):
+  data={"academic_periods":[{"period_id":2,"year_id":1,"settings_id":1,"period_number":2,"status":"active"}],"academic_settings":[],"academic_performance":[]}
+  with self.assertRaisesRegex(ValueError,"completed previous period"):forecast(data,2,"next_period","baseline")
+ async def test_year_forecast_keeps_two_thirds_threshold(self):
+  data={"academic_periods":[{"period_id":1,"year_id":1,"settings_id":1,"period_number":1,"status":"completed"},{"period_id":2,"year_id":1,"settings_id":1,"period_number":2,"status":"active"}],"academic_settings":[{"settings_id":1,"calendar_type":"trimester","grading_scale":"percentage","grade_min":0,"grade_max":100,"scale_id":1}],"academic_years":[{"year_id":1,"program_id":1,"planned_period_count":3}],"academic_performance":[{"performance_id":1,"period_id":1,"course_id":1,"current_grade":80,"credits":5,"workload_value":5,"workload_unit":"credits"},{"performance_id":2,"period_id":2,"course_id":1,"current_grade":82,"credits":5,"workload_value":5,"workload_unit":"credits"}],"actual_results":[{"performance_id":1,"final_grade":80}],"grading_bands":[]}
+  with self.assertRaisesRegex(ValueError,"two thirds"):forecast(data,2,"year","baseline")
+ async def test_forecast_report_is_localized_and_hides_internal_codes(self):
+  html=application_page()
+  for marker in ("const FORECAST_UI=","function forecastLevelLabel(","function forecastMethodLabel(","function forecastSignalLabel(","Forecast horizon","Болжау көкжиегі","预测范围","Horizonte"):self.assertIn(marker,html)
+  self.assertIn("coverageBits.join",html);self.assertNotIn("<b>Покрытие:</b> ${esc(JSON.stringify",html)
+ async def test_mobile_drawer_is_vertical_and_closable(self):
+  html=application_page()
+  for marker in ('class="mobile-sidebar-close"','.sidebar .nav{display:grid!important','overflow-y:auto!important','.sidebar .profile{display:flex!important'):self.assertIn(marker,html)
 if __name__=="__main__":unittest.main()
 
 
