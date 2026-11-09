@@ -723,8 +723,12 @@ def deterministic_actions(message,data,locale="ru"):
             return [{"operation":"create_subject","data":{"course_name":match.group(1).strip()}}]
         return None
     periods=data.get("academic_periods") or []
+    performance=data.get("academic_performance",[])
     active=next((p for p in periods if p.get("status")=="active"),periods[0] if periods else None)
-    rows=[r for r in data.get("academic_performance",[]) if not active or r.get("period_id")==active.get("period_id")]
+    if active and not any(_same_id(r.get("period_id"),active.get("period_id")) for r in performance):
+        completed=[p for p in periods if p.get("status")=="completed" and any(_same_id(r.get("period_id"),p.get("period_id")) for r in performance)]
+        if completed:active=max(completed,key=lambda p:p.get("period_number") or 0)
+    rows=[r for r in performance if not active or _same_id(r.get("period_id"),active.get("period_id"))]
     courses={c.get("course_id"):c.get("course_name") for c in data.get("courses",[])}
     found=[]
     def add(pattern,action):
@@ -789,6 +793,15 @@ async def log_ai_interaction(me,phase,locale,status,user_message=None,actions=No
     try:await rpc("log_ai_interaction",{"p_session_token":me["token"],"p_payload":payload})
     except Exception:pass
 
+def public_ai_response(response,locale="ru"):
+    """Hide implementation details from the UI while the private journal keeps them."""
+    safe=json.loads(json.dumps(response))
+    generic=ai_phrase(locale,"Запрос не выполнен. Техническая причина сохранена в закрытом журнале ошибок.","Сұрау орындалмады. Техникалық себеп жабық қателер журналында сақталды.","The request could not be completed. The technical cause was saved in the private error log.","请求未能完成。技术原因已保存到私有错误日志中。","No se pudo completar la solicitud. La causa técnica se guardó en el registro privado de errores.")
+    for item in safe.get("results",[]):
+        if item.get("status") in ("failed","skipped_after_failure"):
+            item.pop("detail",None);item["message"]=generic
+    return safe
+
 @app.post("/ai/chat")
 async def chat(body:Chat,me=Depends(identity)):
     throttle("ai:"+str(me["account_id"]),30,3600)
@@ -805,10 +818,10 @@ async def chat(body:Chat,me=Depends(identity)):
             failed=any(item.get("status") not in ("ok","clarification_required") for item in response.get("results",[]))
             status="failed" if failed else "clarification" if response.get("status")=="clarification_required" else "planned" if response.get("status")=="confirmation_required" else "completed"
             await log_ai_interaction(me,"plan",body.locale,status,body.message,actions,response)
-            return response
+            return public_ai_response(response,body.locale)
     except Exception as exc:
         await log_ai_interaction(me,"plan",body.locale,"failed",body.message,actions,{"error":str(getattr(exc,"detail",exc))[:500]})
-        raise
+        raise HTTPException(502,ai_phrase(body.locale,"Запрос не выполнен. Техническая причина сохранена в закрытом журнале ошибок.","Сұрау орындалмады. Техникалық себеп жабық қателер журналында сақталды.","The request could not be completed. The technical cause was saved in the private error log.","请求未能完成。技术原因已保存到私有错误日志中。","No se pudo completar la solicitud. La causa técnica se guardó en el registro privado de errores.")) from exc
 
 AI_READ_ENTITIES={
     "study_programs","academic_years","academic_periods","academic_settings","academic_performance",
@@ -1009,7 +1022,7 @@ async def execute_plan(body:ExecutePlan,me=Depends(identity)):
         response=await execute_actions(plan["actions"],me,True,locale)
         status="failed" if any(x.get("status")=="failed" for x in response.get("results",[])) else "completed"
         await log_ai_interaction(me,"execute",locale,status,actions=plan["actions"],outcome=response)
-        return response
+        return public_ai_response(response,locale)
 
 used_plans={}
 
