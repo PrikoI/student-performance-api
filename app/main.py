@@ -157,7 +157,9 @@ class Delete(CurrentPassword):
     current_password:SecretStr
     confirm:bool=False
 class Avatar(Strict):
-    image_data:str=Field(min_length=20,max_length=1500000)
+    # A 5 MiB binary image expands to roughly 6.99 million characters as a
+    # base64 data URL. Keep a small allowance for the MIME prefix.
+    image_data:str=Field(min_length=20,max_length=7100000)
 
 @app.get("/health")
 def health():return {"status":"ok","version":"1.0.0"}

@@ -230,6 +230,13 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   html=application_page()
   for marker in ("function avatarMarkup(","/avatar/${state.me.student_id}","api(\'/avatar\',{method:\'PUT\'","api(\'/avatar\',{method:\'DELETE\'","await api(\'/avatar/${studentId}\')","admin-student-avatar"):self.assertIn(marker,html)
   self.assertNotIn("perfecta_avatar_",html)
+  self.assertIn("file.size>5*1024*1024",html)
+  self.assertTrue(any(getattr(item,"max_length",None)==7100000 for item in Avatar.model_fields["image_data"].metadata))
+
+ async def test_ai_requests_allow_backend_processing_window(self):
+  html=application_page()
+  self.assertIn("api('/ai/chat','POST',{message,locale:state.prefs.language},105000)",html)
+  self.assertIn("api('/ai/execute','POST',{confirmation_token:window.pendingConfirmation},105000)",html)
  async def test_school_forecast_normalizes_five_point_marks_to_percent(self):
   data={"academic_periods":[{"period_id":1,"year_id":1,"settings_id":1,"period_number":1,"status":"active"}],"academic_settings":[{"settings_id":1,"calendar_type":"quarter","grading_scale":"five_point","grade_min":2,"grade_max":5,"scale_id":1}],"academic_performance":[{"performance_id":1,"period_id":1,"course_id":1,"current_grade":5,"workload_unit":"lessons","workload_value":24}],"grading_bands":[],"actual_results":[]}
   result=forecast(data,1,"period","baseline")
