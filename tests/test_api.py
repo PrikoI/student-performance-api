@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from app.academics import historical_projection, forecast
-from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, admin_page, admin_assistant, app
+from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, public_ai_response, admin_page, admin_assistant, app
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -136,6 +136,15 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(actions[0]["operation"],"answer");self.assertIn("5 кредитов",actions[0]["text"])
   self.assertEqual(deterministic_actions("5+5?",{},"ru")[0]["text"],"5 + 5 = 10")
   self.assertIn("Привет",deterministic_actions("Привет",{},"ru")[0]["text"])
+ async def test_ai_reads_latest_completed_period_when_active_period_is_empty(self):
+  data={"academic_periods":[{"period_id":1,"period_number":1,"status":"completed","settings_id":1},{"period_id":2,"period_number":2,"status":"active","settings_id":1}],"academic_settings":[{"settings_id":1,"calendar_type":"quarter"}],"academic_performance":[{"period_id":1,"course_id":1,"current_grade":5,"workload_unit":"lessons","workload_value":24}],"courses":[{"course_id":1,"course_name":"Алгебра"}]}
+  answer=deterministic_actions("Покажи средний балл",data)[0]["text"]
+  self.assertIn("92.5%",answer);self.assertNotIn("Недостаточно",answer)
+ async def test_public_ai_error_hides_technical_detail(self):
+  response={"results":[{"index":0,"status":"failed","detail":"constraint 23514 secret internals"}]}
+  public=public_ai_response(response,"ru")
+  self.assertNotIn("detail",public["results"][0]);self.assertNotIn("23514",json.dumps(public))
+  self.assertIn("закрытом журнале",public["results"][0]["message"])
  async def test_bare_number_without_history_is_not_a_prediction(self):
   with patch("app.main.all_data",AsyncMock(return_value={})),patch("app.main.plan_actions",AsyncMock()) as planner,patch("app.main.log_ai_interaction",AsyncMock()):
    result=await chat(Chat(message="67"),STUDENT)
