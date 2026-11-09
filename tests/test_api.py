@@ -272,6 +272,12 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertNotIn('data-view="history"',html)
   self.assertIn("function predictionHistoryHtml(",html)
   self.assertIn("Для годового прогноза нужно не менее ${expected?Math.ceil(expected*2/3)",html)
+ async def test_bootstrap_parallelizes_independent_requests(self):
+  html=application_page()
+  self.assertIn("const [agreement,savedPrefs]=await Promise.all",html)
+  self.assertIn("const [loadedData,avatarResponse]=agreement.required?[{},null]:await Promise.all",html)
+  self.assertIn("api('/tables/user_preferences','POST'",html)
+  self.assertNotIn("try{await api('/tables/user_preferences'",html)
 if __name__=="__main__":unittest.main()
 
 
