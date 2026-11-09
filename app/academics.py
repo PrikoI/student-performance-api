@@ -43,6 +43,13 @@ def school_grade_percent(value):
     value=float(value)
     return {2:20.0,3:52.0,4:74.5,5:92.5}.get(int(value)) if value.is_integer() and 2<=value<=5 else value
 
+def school_grade_from_percent(value):
+    value=float(value)
+    if value>=85:return 5
+    if value>=65:return 4
+    if value>=40:return 3
+    return 2
+
 def calculate(items, bands=None, conversions=None):
     units={x.get("workload_unit","credits") for x in items}
     if len(units)>1 and (not conversions or any(u not in conversions for u in units)):
@@ -88,7 +95,9 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
     if float(settings["grade_max"]) <= float(settings["grade_min"]):
         raise ValueError("Numeric grading scale required")
     school_mode=settings.get("calendar_type")=="quarter" or settings.get("grading_scale")=="five_point"
-    lo,hi=float(settings["grade_min"]),float(settings["grade_max"])
+    # School marks are normalized to percentages before forecasting. Keep the
+    # forecast scale in the same 0–100 space instead of clamping 5 to 5%.
+    lo,hi=(0.0,100.0) if school_mode else (float(settings["grade_min"]),float(settings["grade_max"]))
     records=[x for x in data["academic_performance"] if x["period_id"]==period["period_id"]]
     if not records: raise ValueError("No academic records in this period")
     bands=[b for b in data.get("grading_bands",[]) if b["scale_id"]==settings.get("scale_id")]
@@ -153,13 +162,14 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
         signals=list(adaptive_signals)
         if r.get("attendance") is not None and float(r["attendance"])<75:signals.append("Attendance below illustrative 75% threshold")
         if r.get("assignments_total") and (r.get("assignments_completed") or 0)<r["assignments_total"]:signals.append("There are unfinished assignments")
-        estimates.append({"performance_id":r["performance_id"],"course_id":r["course_id"],"grade":estimate,"signals":signals,"reference_projection":reference_projection,
+        subject_band=grade_band(estimate,bands) if not school_mode else None
+        estimates.append({"performance_id":r["performance_id"],"course_id":r["course_id"],"grade":estimate,"converted_grade":school_grade_from_percent(estimate) if school_mode else (subject_band.get("letter_grade") if subject_band else None),"converted_points":None if school_mode or not subject_band else subject_band.get("grade_points"),"signals":signals,"reference_projection":reference_projection,
                           "credits":r.get("credits"),"workload_value":r.get("workload_value") or r.get("credits"),"workload_unit":r.get("workload_unit") or "credits","current_grade":raw_current,"normalized_current_percent":current,"exams":exam})
     if not estimates: raise ValueError("Numeric current grades required")
     if not school_mode and any(x["workload_value"] is None for x in estimates):
         raise ValueError("Workload is required for every included subject")
     if not school_mode and len({x["workload_unit"] for x in estimates})>1:raise ValueError("Different workload units require explicit conversion")
-    selected=[{"grade":x["grade"]} if school_mode else dict(grade=x["grade"],workload_value=x["workload_value"],workload_unit=x["workload_unit"]) for x in estimates]
+    selected=[{"grade":x["grade"],"workload_value":1,"workload_unit":"lessons"} if school_mode else dict(grade=x["grade"],workload_value=x["workload_value"],workload_unit=x["workload_unit"]) for x in estimates]
     coverage={"current_subjects":len(estimates)}
     if level in ("year","program"):
         year=next(x for x in data["academic_years"] if x["year_id"]==period["year_id"])
@@ -207,6 +217,8 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
     # 30 academic hours of total student workload. Lessons remain incomparable.
     conversions={"credits":30,"academic_hours":1} if selected_units <= {"credits","academic_hours"} else None
     output=calculate(selected,bands,conversions)
+    if school_mode:
+        output.update(gpa=None,converted_grade=str(school_grade_from_percent(output["average_percent"])),converted_points=None,gpa_note="School profile uses the 2–5 scale")
     ref_datasets=(reference or {}).get("datasets",[])
     reference_model={"used":bool(reference and level in ("period","next_period")),"datasets":ref_datasets,
                      "local_summary":(reference or {}).get("local_summary",[]),
