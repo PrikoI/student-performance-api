@@ -280,7 +280,12 @@ class APITests(unittest.IsolatedAsyncioTestCase):
  async def test_adaptive_forecast_uses_graded_work_and_stays_bounded(self):
   data={"academic_periods":[{"period_id":1,"year_id":1,"settings_id":1,"period_number":1,"status":"active"}],"academic_settings":[{"settings_id":1,"calendar_type":"trimester","grading_scale":"percentage","grade_min":0,"grade_max":100,"scale_id":1}],"academic_performance":[{"performance_id":1,"period_id":1,"course_id":1,"current_grade":70,"credits":5,"workload_value":5,"workload_unit":"credits"}],"grading_bands":[],"actual_results":[],"assessment_components":[{"component_id":1,"performance_id":1,"component_type":"assignment","name":"Assignments","weight_percent":40}],"assessments":[{"assessment_id":1,"component_id":1,"maximum_score":100,"due_at":"2026-01-01"},{"assessment_id":2,"component_id":1,"maximum_score":100,"due_at":"2026-02-01"}],"assessment_results":[{"assessment_id":1,"status":"graded","score":60},{"assessment_id":2,"status":"graded","score":90}]}
   result=forecast(data,1,"period","adaptive")
-  self.assertEqual(result["method_version"],"adaptive-reference-v2");self.assertGreaterEqual(result["average_percent"],0);self.assertLessEqual(result["average_percent"],100);self.assertTrue(any("Adaptive data points" in x for x in result["subjects"][0]["signals"]))
+  baseline=forecast(data,1,"period","baseline")
+  self.assertEqual(result["method_version"],"adaptive-reference-v2");self.assertEqual(result["effective_method_version"],"adaptive-reference-v2");self.assertEqual(result["adaptive_subjects"],1);self.assertNotEqual(result["average_percent"],baseline["average_percent"]);self.assertGreaterEqual(result["average_percent"],0);self.assertLessEqual(result["average_percent"],100);self.assertTrue(any("Adaptive data points" in x for x in result["subjects"][0]["signals"]))
+ async def test_adaptive_forecast_reports_baseline_fallback_without_graded_work(self):
+  data={"academic_periods":[{"period_id":1,"year_id":1,"settings_id":1,"period_number":1,"status":"active"}],"academic_settings":[{"settings_id":1,"calendar_type":"trimester","grading_scale":"percentage","grade_min":0,"grade_max":100,"scale_id":1}],"academic_performance":[{"performance_id":1,"period_id":1,"course_id":1,"current_grade":70,"credits":5,"workload_value":5,"workload_unit":"credits"}],"grading_bands":[],"actual_results":[],"assessment_components":[],"assessments":[],"assessment_results":[]}
+  result=forecast(data,1,"period","adaptive")
+  self.assertEqual(result["method_version"],"adaptive-reference-v2");self.assertEqual(result["effective_method_version"],"baseline-reference-v2");self.assertEqual(result["adaptive_subjects"],0)
  async def test_next_period_forecast_rejects_missing_completed_source(self):
   data={"academic_periods":[{"period_id":2,"year_id":1,"settings_id":1,"period_number":2,"status":"active"}],"academic_settings":[],"academic_performance":[]}
   with self.assertRaisesRegex(ValueError,"completed previous period"):forecast(data,2,"next_period","baseline")
@@ -314,7 +319,19 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   html=application_page()
   self.assertNotIn('data-view="history"',html)
   self.assertIn("function predictionHistoryHtml(",html)
-  self.assertIn("Для годового прогноза нужно не менее ${expected?Math.ceil(expected*2/3)",html)
+  self.assertIn("const FORECAST_PAGE_COPY=",html)
+  self.assertNotIn("<h2>Последний прогноз</h2>",html)
+  self.assertIn("userDate(p.created_at||p.prediction_date)",html)
+ async def test_chat_history_loads_on_navigation_and_uses_wrapped_cards(self):
+  html=application_page()
+  self.assertIn("go(b.dataset.view)",html)
+  self.assertIn("if(v==='assistant'){assistant();loadChatSessions()}",html)
+  self.assertIn("const CHAT_COPY=",html)
+  self.assertIn("chat-session-title",html)
+  self.assertIn("overflow-y:auto;overflow-x:hidden",html)
+ async def test_prediction_modal_keeps_close_control_visible(self):
+  html=application_page()
+  self.assertIn("position:sticky;top:0;z-index:3",html)
  async def test_bootstrap_parallelizes_independent_requests(self):
   html=application_page()
   self.assertIn("const [agreement,savedPrefs]=await Promise.all",html)
