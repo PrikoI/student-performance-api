@@ -1,4 +1,5 @@
 import json, os, unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
@@ -133,6 +134,23 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   data={"academic_periods":[{"period_id":1,"status":"active"}],"academic_performance":[{"period_id":1,"course_id":1,"credits":5,"current_grade":80}],"courses":[{"course_id":1,"course_name":"Math"}]}
   actions=deterministic_actions("Сколько у меня кредитов?",data)
   self.assertEqual(actions[0]["operation"],"answer");self.assertIn("5 кредитов",actions[0]["text"])
+  self.assertEqual(deterministic_actions("5+5?",{},"ru")[0]["text"],"5 + 5 = 10")
+  self.assertIn("Привет",deterministic_actions("Привет",{},"ru")[0]["text"])
+ async def test_bare_number_without_history_is_not_a_prediction(self):
+  with patch("app.main.all_data",AsyncMock(return_value={})),patch("app.main.plan_actions",AsyncMock()) as planner,patch("app.main.log_ai_interaction",AsyncMock()):
+   result=await chat(Chat(message="67"),STUDENT)
+   planner.assert_not_awaited();self.assertEqual(result["results"][0]["operation"],"answer")
+   self.assertIn("число",result["results"][0]["result"]["text"])
+ async def test_ai_chat_accepts_bounded_current_conversation_history(self):
+  body=Chat(message="67",history=[{"role":"assistant","content":"Назовите оценку"}])
+  self.assertEqual(body.history[0].role,"assistant")
+  html=application_page();self.assertIn("conversation_history",Path("app/main.py").read_text(encoding="utf-8"))
+  self.assertIn("slice(0,-2)",html);self.assertIn("history},105000",html)
+ async def test_failed_ai_step_is_logged_as_failed(self):
+  response={"results":[{"index":0,"status":"failed","detail":"No academic records"}],"max_actions":5}
+  with patch("app.main.all_data",AsyncMock(return_value={})),patch("app.main.deterministic_actions",return_value=[{"operation":"predict"}]),patch("app.main.execute_actions",AsyncMock(return_value=response)),patch("app.main.log_ai_interaction",AsyncMock()) as logger:
+   self.assertEqual(await chat(Chat(message="Сделай прогноз"),STUDENT),response)
+   self.assertEqual(logger.await_args.args[3],"failed")
  async def test_ai_plan_accepts_json_and_markdown_wrappers(self):
   exact={"choices":[{"message":{"content":"{\"actions\":[{\"operation\":\"answer\",\"text\":\"ok\"}]}"}}]}
   wrapped={"choices":[{"message":{"content":"Here is the plan:\n```json\n{\"actions\":[{\"operation\":\"answer\",\"text\":\"ok\"}]}\n```"}}]}
