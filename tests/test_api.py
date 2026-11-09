@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from app.academics import historical_projection, forecast
-from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, admin_page, admin_assistant, app
+from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, admin_page, admin_assistant, app
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -216,6 +216,20 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertIn('Выйти из аккаунта',html)
   self.assertIn('loadSettings();',html)
   self.assertIn('location.replace("/")',html)
+ async def test_avatar_endpoints_scope_reads_and_writes(self):
+  student={**STUDENT,"student_id":17}
+  image="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
+  with patch("app.main.rpc",AsyncMock(side_effect=[{"student_id":17,"image_data":None},{"student_id":17,"image_data":image},{"student_id":17,"deleted":True}])) as mocked:
+   self.assertIsNone((await get_avatar(17,student))["image_data"])
+   self.assertEqual((await put_avatar(Avatar(image_data=image),student))["image_data"],image)
+   self.assertTrue((await delete_avatar(student))["deleted"])
+  self.assertEqual(mocked.await_args_list[0].args,("api_avatar",{"p_token":"test","p_student_id":17,"p_image_data":None}))
+  self.assertEqual(mocked.await_args_list[1].args,("api_avatar",{"p_token":"test","p_student_id":17,"p_image_data":image}))
+  self.assertEqual(mocked.await_args_list[2].args,("api_avatar",{"p_token":"test","p_student_id":17,"p_image_data":""}))
+ async def test_avatar_ui_is_remote_persistent_and_admin_visible(self):
+  html=application_page()
+  for marker in ("function avatarMarkup(","/avatar/${state.me.student_id}","api(\'/avatar\',{method:\'PUT\'","api(\'/avatar\',{method:\'DELETE\'","await api(\'/avatar/${studentId}\')","admin-student-avatar"):self.assertIn(marker,html)
+  self.assertNotIn("perfecta_avatar_",html)
 if __name__=="__main__":unittest.main()
 
 
