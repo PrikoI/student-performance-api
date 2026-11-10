@@ -158,6 +158,10 @@ class ChatMessageCreate(Strict):
     role:Literal["user","assistant"]
     content:str=Field(min_length=1,max_length=12000)
     mode:Literal["ai","basic"]="ai"
+class ChatControl(Strict):
+    control_mode:Literal["ai","operator"]
+class OperatorChatMessage(Strict):
+    content:str=Field(min_length=1,max_length=12000)
 class ExecutePlan(Strict):
     confirmation_token: str=Field(max_length=30000)
 class CurrentPassword(Strict):
@@ -573,6 +577,22 @@ async def chat_message_append(session_id:int,body:ChatMessageCreate,me=Depends(i
 async def chat_session_delete(session_id:int,me=Depends(identity)):
     return {"deleted":await rpc("ai_chat_delete",{"p_session_token":me["token"],"p_session_id":session_id})}
 
+@app.get("/admin/ai/chats")
+async def admin_chat_sessions(me=Depends(administrator)):
+    return await rpc("ai_chat_admin_list",{"p_token":me["token"]})
+
+@app.get("/admin/ai/chats/{session_id}")
+async def admin_chat_get(session_id:int,me=Depends(administrator)):
+    return await rpc("ai_chat_admin_get",{"p_token":me["token"],"p_session_id":session_id})
+
+@app.post("/admin/ai/chats/{session_id}/control")
+async def admin_chat_control(session_id:int,body:ChatControl,me=Depends(administrator)):
+    return await rpc("ai_chat_admin_control",{"p_token":me["token"],"p_session_id":session_id,"p_control":body.control_mode})
+
+@app.post("/admin/ai/chats/{session_id}/messages")
+async def admin_chat_message(session_id:int,body:OperatorChatMessage,me=Depends(administrator)):
+    return await rpc("ai_chat_admin_append",{"p_token":me["token"],"p_session_id":session_id,"p_content":body.content})
+
 AI_MAX_ACTIONS=12
 
 async def plan_actions(message,data,c,locale="ru",history=None):
@@ -907,6 +927,10 @@ async def chat(body:Chat,me=Depends(identity)):
     actions=None
     try:
         async with asyncio.timeout(90):
+            if body.session_id is not None:
+                control=await rpc("ai_chat_control_state",{"p_session_token":me["token"],"p_session_id":body.session_id})
+                if control.get("control_mode")=="operator":
+                    return {"status":"operator_pending","control_mode":"operator","results":[]}
             data=await all_data(me)
             # Bounded memory across every AI chat owned by this student. The
             # ownership check lives in the database function; other accounts

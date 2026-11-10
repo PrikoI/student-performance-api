@@ -43,6 +43,16 @@ class APITests(unittest.IsolatedAsyncioTestCase):
  async def test_admin_role(self):
   with self.assertRaises(HTTPException) as ctx:await administrator(STUDENT)
   self.assertEqual(ctx.exception.status_code,403)
+ async def test_operator_control_pauses_ai_before_reading_academic_data(self):
+  body=Chat(message="hello",locale="en",session_id=7)
+  with patch("app.main.rpc",AsyncMock(return_value={"control_mode":"operator"})) as rpc_mock,patch("app.main.all_data",AsyncMock()) as data_mock:
+   result=await chat(body,STUDENT)
+   self.assertEqual(result["status"],"operator_pending");data_mock.assert_not_awaited()
+   rpc_mock.assert_awaited_once_with("ai_chat_control_state",{"p_session_token":"test","p_session_id":7})
+ async def test_hybrid_chat_admin_ui_and_disclosure_are_present(self):
+  html=application_page()
+  for marker in ('data-view="admin_chats"','Перехватить управление','/admin/ai/chats','hybridDisclosure','operator_pending','Ответы в чатах Perfecta могут формироваться ИИ или оператором проекта.'):
+   self.assertIn(marker,html)
  async def test_unsigned_account_is_blocked_from_academic_api(self):
   request=SimpleNamespace(url=SimpleNamespace(path="/data"));credentials=SimpleNamespace(credentials="session")
   with patch("app.main.rpc",AsyncMock(side_effect=[{"account_id":"a","role":"student"},{"required":True}])) as rpc:
