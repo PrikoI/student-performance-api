@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from app.academics import historical_projection, forecast
-from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, split_explicit_requests, plan_all_requests, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, public_ai_response, admin_page, admin_assistant, app
+from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, split_explicit_requests, plan_all_requests, explicit_academic_change_intent, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, public_ai_response, admin_page, admin_assistant, app
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -57,6 +57,17 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   html=application_page()
   for marker in ("window.chatRequestInFlight","window.chatSyncInFlight","adminChatSignature","adminChatState.draft","window.adminChatSending","setSelectionRange"):
    self.assertIn(marker,html)
+  self.assertIn("d.session?.control_mode==='operator'&&messages.at(-1)?.who==='user'",html)
+  self.assertIn("pending:true",html)
+ async def test_conversation_after_operator_is_not_a_data_change(self):
+  self.assertFalse(explicit_academic_change_intent("ты почему мне такое говоришь"))
+  self.assertFalse(explicit_academic_change_intent("это было странно, объясни"))
+  self.assertTrue(explicit_academic_change_intent("добавь математику с оценкой 5"))
+  self.assertTrue(explicit_academic_change_intent("Учебный год 2026-2027, 1 четверть: алгебра 5, физика 4"))
+ async def test_current_chat_history_is_sent_back_to_ai(self):
+  html=application_page()
+  self.assertIn("history=state.messages.slice(0,-2)",html)
+  self.assertIn("session_id:state.currentChatId",html)
  async def test_unsigned_account_is_blocked_from_academic_api(self):
   request=SimpleNamespace(url=SimpleNamespace(path="/data"));credentials=SimpleNamespace(credentials="session")
   with patch("app.main.rpc",AsyncMock(side_effect=[{"account_id":"a","role":"student"},{"required":True}])) as rpc:
