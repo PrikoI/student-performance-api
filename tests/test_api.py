@@ -53,6 +53,10 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   html=application_page()
   for marker in ('data-view="admin_chats"','Перехватить управление','/admin/ai/chats','hybridDisclosure','operator_pending','Ответы в чатах Perfecta могут формироваться ИИ или оператором проекта.'):
    self.assertIn(marker,html)
+ async def test_operator_chat_polling_preserves_drafts_and_blocks_races(self):
+  html=application_page()
+  for marker in ("window.chatRequestInFlight","window.chatSyncInFlight","adminChatSignature","adminChatState.draft","window.adminChatSending","setSelectionRange"):
+   self.assertIn(marker,html)
  async def test_unsigned_account_is_blocked_from_academic_api(self):
   request=SimpleNamespace(url=SimpleNamespace(path="/data"));credentials=SimpleNamespace(credentials="session")
   with patch("app.main.rpc",AsyncMock(side_effect=[{"account_id":"a","role":"student"},{"required":True}])) as rpc:
