@@ -55,15 +55,17 @@ end $$;
 
 create or replace function private.ai_chat_append(p_session_token text,p_session_id bigint,p_role text,p_content text,p_mode text default 'ai') returns jsonb
 language plpgsql security definer set search_path='' as $$
-declare sid integer; result private.ai_chat_messages; first_message boolean;
+declare sid integer; result private.ai_chat_messages; first_message boolean; session_control text;
 begin
   sid=private.session_student(p_session_token);
   if p_role not in ('user','assistant') or p_mode not in ('ai','basic') or char_length(trim(p_content)) not between 1 and 12000 then
     raise exception 'Invalid chat message' using errcode='22023';
   end if;
-  if not exists(select 1 from private.ai_chat_sessions where session_id=p_session_id and student_id=sid) then raise exception 'Chat not found' using errcode='P0002'; end if;
+  select control_mode into session_control from private.ai_chat_sessions where session_id=p_session_id and student_id=sid;
+  if not found then raise exception 'Chat not found' using errcode='P0002'; end if;
+  if p_role='assistant' and session_control='operator' then raise exception 'Operator controls this chat' using errcode='42501'; end if;
   select not exists(select 1 from private.ai_chat_messages where session_id=p_session_id) into first_message;
-  insert into private.ai_chat_messages(session_id,student_id,role,content,mode) values(p_session_id,sid,p_role,trim(p_content),p_mode) returning * into result;
+  insert into private.ai_chat_messages(session_id,student_id,role,content,mode,author_type) values(p_session_id,sid,p_role,trim(p_content),p_mode,case when p_role='user' then 'user' when p_mode='basic' then 'basic' else 'ai' end) returning * into result;
   update private.ai_chat_sessions set updated_at=now(),mode=p_mode,
     title=case when first_message and p_role='user' then left(regexp_replace(trim(p_content),'[[:space:]]+',' ','g'),80) else title end
     where session_id=p_session_id and student_id=sid;
@@ -100,4 +102,5 @@ revoke all on function public.ai_chat_create(text,text),public.ai_chat_list(text
 grant execute on function public.ai_chat_create(text,text),public.ai_chat_list(text),public.ai_chat_get(text,bigint),public.ai_chat_append(text,bigint,text,text,text),public.ai_chat_delete(text,bigint) to anon,authenticated;
 revoke all on function public.ai_chat_memory(text,integer) from public;
 grant execute on function public.ai_chat_memory(text,integer) to anon,authenticated;
+
 
