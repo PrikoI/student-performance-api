@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from app.academics import historical_projection, forecast
-from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, split_explicit_requests, plan_all_requests, explicit_academic_change_intent, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, public_ai_response, admin_page, admin_assistant, app
+from app.main import Calculation, Chat, ChatTurn, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, split_explicit_requests, plan_all_requests, explicit_academic_change_intent, conversational_repair_action, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, public_ai_response, admin_page, admin_assistant, app
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -59,6 +59,8 @@ class APITests(unittest.IsolatedAsyncioTestCase):
    self.assertIn(marker,html)
   self.assertIn("d.session?.control_mode==='operator'&&messages.at(-1)?.who==='user'",html)
   self.assertIn("pending:true",html)
+  self.assertIn("function paintChatMessages()",html)
+  self.assertIn("optimistic:true",html)
  async def test_conversation_after_operator_is_not_a_data_change(self):
   self.assertFalse(explicit_academic_change_intent("ты почему мне такое говоришь"))
   self.assertFalse(explicit_academic_change_intent("это было странно, объясни"))
@@ -68,6 +70,15 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   html=application_page()
   self.assertIn("history=state.messages.slice(0,-2)",html)
   self.assertIn("session_id:state.currentChatId",html)
+ async def test_toxic_context_boundary_gets_apology_not_refusal_or_write(self):
+  history=[ChatTurn(role="assistant",content="Нет, иди нахуй")]
+  for message in ("пипец ты, почему такое говоришь", "вот выше прочитай и ответь почему", "ты почему мне такое говоришь, ахуел"):
+   actions=conversational_repair_action(message,history,"ru")
+   self.assertEqual(actions[0]["operation"],"answer")
+   self.assertIn("Извините",actions[0]["text"])
+   self.assertNotIn("уточните, что именно вас интересует",actions[0]["text"])
+  for ordinary in ("почему прогноз стал ниже", "почему у меня такая оценка", "почему ты считаешь мои оценки хорошими"):
+   self.assertIsNone(conversational_repair_action(ordinary,history,"ru"))
  async def test_unsigned_account_is_blocked_from_academic_api(self):
   request=SimpleNamespace(url=SimpleNamespace(path="/data"));credentials=SimpleNamespace(credentials="session")
   with patch("app.main.rpc",AsyncMock(side_effect=[{"account_id":"a","role":"student"},{"required":True}])) as rpc:

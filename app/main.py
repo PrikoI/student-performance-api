@@ -687,6 +687,23 @@ def explicit_academic_change_intent(message):
     structured=bool(re.search(r"(?:учебн\w*\s+год|четверт|семестр|триместр|quarter|semester|trimester|класс|grade\s*[:\-])",text) and len(re.findall(r"\b\d+(?:[.,]\d+)?\b",text))>=3)
     return explicit or structured
 
+def conversational_repair_action(message,history,locale="ru"):
+    text=str(message or "").casefold()
+    previous=next((turn.content for turn in reversed(history or []) if getattr(turn,"role",None)=="assistant" and getattr(turn,"content",None)),None)
+    if not previous:return None
+    reference=bool(re.search(r"(?:почему|зачем|выше|предыдущ|что\s+ты\s+(?:мне\s+)?(?:сказ|говор)|такое\s+говор|ответь.*почему|why|previous|above|what\s+you\s+said|неге|алдыңғы|жоғарыда|为什么|上面|上一|por\s+qu[eé]|arriba|anterior)",text))
+    complaint=bool(re.search(r"(?:пипец|фигн|ерунд|бред|ахуел|обид|груб|неумест|странн|неправ|ужас|туп|rude|wrong|strange|inappropriate|nonsense|қате|дөрекі|奇怪|错误|冒犯|groser|incorrect|extrañ)",text))
+    targets_reply=bool(re.search(r"(?:\bты\b|твой\s+ответ|помощник|что\s+(?:ты\s+)?(?:сказ|говор|напис)|ответ\w*\s+(?:выше|до этого)|previous\s+(?:reply|answer)|you\s+said|your\s+(?:reply|answer)|алдыңғы\s+жауап|сен\s+неге|上一条回复|你为什么|respuesta\s+anterior|por\s+qu[eé]\s+dijiste)",text))
+    academic_question=bool(re.search(r"(?:оцен|балл|прогноз|предмет|посещ|кредит|grade|forecast|subject|attendance|credit|баға|болжам|пән|成绩|预测|课程|nota|pron[oó]stico|asignatura)",text))
+    if not targets_reply or not (complaint or reference) or (academic_question and not complaint):return None
+    reply=ai_phrase(locale,
+      "Извините. Предыдущий ответ был неуместным и не учитывал контекст разговора. Так отвечать не следовало. Я должен был спокойно продолжить диалог или уточнить вашу просьбу, а не повторять отказ. Учебные данные я при этом не изменял.",
+      "Кешіріңіз. Алдыңғы жауап орынсыз болды және әңгіме мәнмәтінін ескермеді. Бұлай жауап бермеуім керек еді. Бас тартуды қайталамай, диалогты сабырлы жалғастыруым немесе өтінішіңізді нақтылауым керек еді. Оқу деректеріңіз өзгертілген жоқ.",
+      "I am sorry. The previous reply was inappropriate and ignored the conversation context. I should have continued calmly or asked what you meant instead of repeating a refusal. I did not change any academic data.",
+      "抱歉。上一条回复不合适，也没有考虑对话上下文。我本应平静地继续交流或询问您的意思，而不是重复拒绝。您的学习数据没有被修改。",
+      "Lo siento. La respuesta anterior fue inapropiada y no tuvo en cuenta el contexto. Debí continuar con calma o pedir una aclaración en lugar de repetir una negativa. No modifiqué ningún dato académico.")
+    return [{"operation":"answer","text":reply}]
+
 def deterministic_actions(message,data,locale="ru"):
     locale=normalize_ai_locale(locale)
     """Handle common reads and complete education-profile imports locally."""
@@ -949,7 +966,10 @@ async def chat(body:Chat,me=Depends(identity)):
             memory=[ChatTurn(role=item["role"],content=item["content"]) for item in (stored or []) if item.get("role") in ("user","assistant") and item.get("content")]
             merged_history=(memory+body.history)[-32:]
             # Local parsers handle exact structured imports; the model handles semantic inference.
-            if body.message.strip().replace(",",".").replace(".","",1).isdigit() and not body.history:
+            repair=conversational_repair_action(body.message,merged_history,body.locale)
+            if repair:
+                actions=repair
+            elif body.message.strip().replace(",",".").replace(".","",1).isdigit() and not body.history:
                 actions=[{"operation":"answer","text":ai_phrase(body.locale,"Уточните, пожалуйста, что означает это число.","Бұл сан нені білдіретінін нақтылаңыз.","Please clarify what this number refers to.","请说明这个数字代表什么。","Aclara a qué se refiere este número.")}]
             else:
                 parts=split_explicit_requests(body.message)
