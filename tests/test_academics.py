@@ -36,6 +36,22 @@ class AcademicTests(unittest.TestCase):
   r=calculate([{"grade":5,"workload_value":2,"workload_unit":"lessons"},{"grade":4,"workload_value":1,"workload_unit":"lessons"}])
   self.assertEqual(r["average"],4.6667)
   self.assertIsNone(r["gpa"])
+ def test_quarter_adaptive_forecast_uses_school_scale_and_lessons(self):
+  d=self.data();d["academic_settings"][0].update(calendar_type="quarter",grading_scale="five_point",grade_min=2,grade_max=5)
+  d["academic_performance"][0].update(current_grade=5,credits=None,workload_value=24,workload_unit="lessons")
+  d["assessment_components"]=[{"component_id":1,"performance_id":1,"name":"СОР","component_type":"quiz","weight_percent":40}]
+  d["assessments"]=[{"assessment_id":1,"component_id":1,"maximum_score":10,"due_at":"2026-01-01"}]
+  d["assessment_results"]=[{"assessment_id":1,"status":"graded","score":8}]
+  r=forecast(d,1,method="adaptive")
+  self.assertEqual(r["effective_method_version"],"adaptive-reference-v2");self.assertEqual(r["workload_unit"],"lessons");self.assertIsNone(r["credits"]);self.assertIn(r["converted_grade"],("4","5"))
+ def test_semester_adaptive_forecast_uses_hours_and_differs_from_baseline(self):
+  d=self.data();d["academic_settings"][0].update(calendar_type="semester")
+  d["academic_performance"][0].update(current_grade=72,credits=None,workload_value=90,workload_unit="academic_hours")
+  d["assessment_components"]=[{"component_id":1,"performance_id":1,"name":"Midterm","component_type":"midterm","weight_percent":40}]
+  d["assessments"]=[{"assessment_id":1,"component_id":1,"maximum_score":100,"due_at":"2026-01-01"}]
+  d["assessment_results"]=[{"assessment_id":1,"status":"graded","score":90}]
+  adaptive=forecast(d,1,method="adaptive");baseline=forecast(d,1,method="baseline")
+  self.assertEqual(adaptive["effective_method_version"],"adaptive-reference-v2");self.assertEqual(adaptive["workload_unit"],"academic_hours");self.assertNotEqual(adaptive["average_percent"],baseline["average_percent"])
  def test_year_requires_context(self):
   with self.assertRaises(ValueError):forecast(self.data(),1,"year")
  def test_future_and_closed_periods(self):
@@ -51,5 +67,6 @@ class AcademicTests(unittest.TestCase):
    "academic_years":[{"year_id":1}],"grading_bands":[]}
 
 if __name__=="__main__":unittest.main()
+
 
 
