@@ -671,6 +671,26 @@ def deterministic_actions(message,data,locale="ru"):
         value={"+":lambda:left+right,"-":lambda:left-right,"*":lambda:left*right,"/":lambda:left/right}[operator]()
         return [{"operation":"answer","text":f"{arithmetic.group(1)} {operator} {arithmetic.group(3)} = {value:g}"}]
     profile=re.search(r"учебн(?:ый|ого)\s+год\s*:\s*(20\d{2})\s*[–-]\s*(20\d{2})",text)
+    # Copying an existing period is a distinct operation. Do not let the model
+    # reinterpret phrases such as "те же предметы" as a new course name.
+    same_subjects=bool(re.search(r"(?:те\s+же|такие\s+же)\s+предмет|предметы?\s+(?:как|из)\s+(?:в|за)|same\s+subjects?",text))
+    period_mentions=[int(x) for x in re.findall(r"(?:за|в|на|из|to|in|from)\s*(?:the\s*)?(?:quarter|semester)?\s*([1-4])(?:-?(?:ю|й|ую|я))?\s*(?:четверт|семестр|quarter|semester)?",text)]
+    if same_subjects and period_mentions:
+        target_number=period_mentions[0]
+        source_number=period_mentions[1] if len(period_mentions)>1 else None
+        periods=data.get("academic_periods") or []
+        matching_targets=[p for p in periods if int(p.get("period_number") or 0)==target_number]
+        target=next((p for p in matching_targets if str(p.get("status")).casefold() in ("active","planned")),matching_targets[0] if matching_targets else None)
+        if source_number is None:
+            candidates=[p for p in periods if int(p.get("period_number") or 0)<target_number and any(_same_id(r.get("period_id"),p.get("period_id")) for r in data.get("academic_performance",[]))]
+            source=max(candidates,key=lambda p:int(p.get("period_number") or 0),default=None)
+        else:
+            matching_sources=[p for p in periods if int(p.get("period_number") or 0)==source_number and (not target or target.get("year_id") is None or _same_id(p.get("year_id"),target.get("year_id")))]
+            source=next((p for p in matching_sources if any(_same_id(r.get("period_id"),p.get("period_id")) for r in data.get("academic_performance",[]))),matching_sources[0] if matching_sources else None)
+        if not target or not source:
+            return [{"operation":"clarify","questions":[ai_phrase(locale,"Не удалось найти указанные учебные периоды. Какой период копировать и в какой?","Көрсетілген оқу кезеңдері табылмады. Қай кезеңнен қай кезеңге көшіру керек?","I could not find those academic periods. Which period should be copied to which one?")],"draft":{"source_period_number":source_number,"target_period_number":target_number}}]
+        include_grades=bool(re.search(r"(?:вместе|также|копир\w*)\s+(?:с\s+)?оцен|with\s+grades",text)) and not bool(re.search(r"без\s+оцен|no\s+grades",text))
+        return [{"operation":"copy_period_subjects","data":{"source_period_id":source["period_id"],"target_period_id":target["period_id"],"include_grades":include_grades}}]
     if "предыдущий черновик данных:" in text:
         try:
             import json as _json
@@ -915,7 +935,7 @@ AI_WRITE_ENTITIES={
     "lesson_attendance","assessment_components","assessments","assessment_results","actual_results",
     "grading_scales"
 }
-AI_MUTATIONS={"write","create_subject","import_profile"}
+AI_MUTATIONS={"write","create_subject","import_profile","copy_period_subjects"}
 
 def _same_id(left,right):
     try:return int(left)==int(right)
@@ -1014,6 +1034,21 @@ def prepared_action(action,data,locale="ru"):
         if missing:
             return {"operation":"clarify","questions":["Укажите количество уроков отдельно для: "+", ".join(missing)+"."],"draft":{"operation":"import_profile","data":{"setup":setup,"subjects":subjects}}}
         a["data"]={"setup":setup,"subjects":cleaned}
+    elif op=="copy_period_subjects":
+        fields=a.get("data") or {};source=fields.get("source_period_id");target=fields.get("target_period_id")
+        if not owned_id(data,"academic_periods","period_id",source) or not owned_id(data,"academic_periods","period_id",target):raise ValueError("Choose existing source and target periods")
+        if _same_id(source,target):raise ValueError("Source and target periods must differ")
+        source_rows=[r for r in data.get("academic_performance",[]) if _same_id(r.get("period_id"),source)]
+        if not source_rows:raise ValueError("The source period has no subjects to copy")
+        course_names={c.get("course_id"):c.get("course_name") for c in data.get("courses",[])};subjects=[];missing=[]
+        for row in source_rows:
+            name=course_names.get(row.get("course_id"));value=row.get("workload_value",row.get("credits"));unit=row.get("workload_unit") or ("credits" if row.get("credits") is not None else None)
+            if not name or value is None or unit not in ("credits","academic_hours","lessons"):missing.append(name or str(row.get("course_id")));continue
+            item={"period_id":target,"course_name":name,"workload_value":value,"workload_unit":unit,"credits":value if unit=="credits" else None,"entry_method":"ai_assisted"}
+            if fields.get("include_grades") and row.get("current_grade") is not None:item["current_grade"]=row["current_grade"]
+            subjects.append(item)
+        if missing:return {"operation":"clarify","questions":["Укажите учебную нагрузку для: "+", ".join(missing)],"draft":a}
+        a["data"]={"source_period_id":source,"target_period_id":target,"include_grades":bool(fields.get("include_grades")),"subjects":subjects}
     elif op=="predict":
         level=a.get("level","period")
         if level not in ("period","next_period","year","program"):raise ValueError("Unknown prediction level")
@@ -1073,6 +1108,9 @@ async def execute_actions(actions,me,confirmed,locale="ru"):
                 elif op=="import_profile":
                     if not confirmed:result={"status":"confirmation_required","proposed_action":a}
                     else:result=await import_profile(a["data"],me,data)
+                elif op=="copy_period_subjects":
+                    if not confirmed:result={"status":"confirmation_required","proposed_action":a}
+                    else:result=await rpc("create_subject_records_atomic",{"p_session_token":me["token"],"p_subjects":a["data"]["subjects"]})
                 elif op=="answer":result={"text":str(a.get("text",""))[:6000]}
                 else:raise ValueError("Unsupported operation")
                 results.append({"index":index,"operation":op,"status":"ok","result":result})
@@ -1110,6 +1148,7 @@ used_plans={}
 
 @app.get("/admin",response_class=HTMLResponse)
 def admin_page():return Path(__file__).with_name("admin.html").read_text(encoding="utf-8")
+
 
 
 

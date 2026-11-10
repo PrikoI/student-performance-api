@@ -231,6 +231,24 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   prepared=prepared_action(action,data)
   self.assertEqual(prepared["data"]["course_name"],"Математика")
   self.assertEqual(prepared["data"]["workload_unit"],"lessons");self.assertEqual(prepared["data"]["workload_value"],24)
+ async def test_copy_same_quarter_subjects_without_grades_is_atomic_and_safe(self):
+  data={"academic_periods":[{"period_id":11,"period_number":1,"status":"completed"},{"period_id":12,"period_number":2,"status":"active"}],"academic_performance":[{"performance_id":1,"period_id":11,"course_id":7,"current_grade":5,"workload_value":24,"workload_unit":"lessons"}],"courses":[{"course_id":7,"course_name":"Математика"}]}
+  action=deterministic_actions("Добавь за 2 четверть те же предметы, что и за 1 четверть, но без оценок",data)[0]
+  self.assertEqual(action["operation"],"copy_period_subjects")
+  prepared=prepared_action(action,data)
+  self.assertEqual(prepared["data"]["subjects"],[{"period_id":12,"course_name":"Математика","workload_value":24,"workload_unit":"lessons","credits":None,"entry_method":"ai_assisted"}])
+ async def test_copy_same_semester_subjects_keeps_hours_and_omits_grades(self):
+  data={"academic_periods":[{"period_id":21,"period_number":1,"year_id":4,"status":"completed"},{"period_id":22,"period_number":2,"year_id":4,"status":"active"}],"academic_performance":[{"period_id":21,"course_id":8,"current_grade":88,"workload_value":90,"workload_unit":"academic_hours"}],"courses":[{"course_id":8,"course_name":"Programming"}]}
+  action=deterministic_actions("Add the same subjects to semester 2 as in semester 1, no grades",data)[0]
+  prepared=prepared_action(action,data)
+  self.assertEqual(prepared["operation"],"copy_period_subjects");self.assertEqual(prepared["data"]["subjects"][0]["workload_unit"],"academic_hours");self.assertNotIn("current_grade",prepared["data"]["subjects"][0])
+ async def test_copy_period_executes_one_atomic_rpc_after_confirmation(self):
+  data={"academic_periods":[{"period_id":11,"period_number":1},{"period_id":12,"period_number":2}],"academic_performance":[{"period_id":11,"course_id":7,"current_grade":4,"workload_value":16,"workload_unit":"lessons"}],"courses":[{"course_id":7,"course_name":"Физика"}]}
+  action={"operation":"copy_period_subjects","data":{"source_period_id":11,"target_period_id":12,"include_grades":False}}
+  with patch("app.main.all_data",AsyncMock(return_value=data)),patch("app.main.rpc",AsyncMock(return_value={"count":1})) as rpc_mock:
+   result=await execute_actions([action],STUDENT,True)
+  self.assertEqual(result["results"][0]["status"],"ok");rpc_mock.assert_awaited_once()
+  self.assertEqual(rpc_mock.await_args.args[0],"create_subject_records_atomic")
  async def test_clarification_questions_are_deduplicated(self):
   actions=[{"operation":"clarify","questions":["Сколько уроков?","  сколько   уроков?!","Какая четверть?"],"draft":{"course_name":"Математика"}}]
   with patch("app.main.all_data",AsyncMock(return_value={"academic_periods":[{"period_id":1,"status":"active"}]})):
@@ -376,6 +394,7 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertIn("Background account loading failed",html)
   self.assertIn("new AbortController()",html)
 if __name__=="__main__":unittest.main()
+
 
 
 
