@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from app.academics import historical_projection, forecast
-from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, public_ai_response, admin_page, admin_assistant, app
+from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, split_explicit_requests, plan_all_requests, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, public_ai_response, admin_page, admin_assistant, app
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -145,6 +145,20 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertIsNone(deterministic_actions("Что скажешь о моей оценке по программированию?",data))
   answer=deterministic_actions("What is my grade for Programming?",data)[0]["text"]
   self.assertIn("Programming",answer);self.assertIn("10",answer);self.assertNotIn("Technologies",answer)
+ async def test_opinion_request_is_not_replaced_with_raw_grade_list(self):
+  data={"academic_periods":[{"period_id":1,"status":"completed"}],"academic_performance":[{"period_id":1,"course_id":1,"current_grade":10,"credits":5},{"period_id":1,"course_id":2,"current_grade":91,"credits":5}],"courses":[{"course_id":1,"course_name":"Programming"},{"course_id":2,"course_name":"ICT"}]}
+  for message in ("Что скажешь о моих оценках?","Почему это плохо и как исправить?","What do you think about my grades?"):
+   with self.subTest(message=message):self.assertIsNone(deterministic_actions(message,data))
+ async def test_explicit_compound_request_keeps_every_part(self):
+  parts=split_explicit_requests("Предложи способы решения. И ещё, что ты умеешь?")
+  self.assertEqual(parts,["Предложи способы решения","что ты умеешь"])
+  with patch("app.main.plan_actions",AsyncMock(side_effect=[[{"operation":"answer","text":"advice"}],[{"operation":"answer","text":"capabilities"}]])) as planner:
+   actions=await plan_all_requests("Предложи способы решения. И ещё, что ты умеешь?",{}, {},"ru",[])
+  self.assertEqual([a["text"] for a in actions],["advice","capabilities"]);self.assertEqual(planner.await_count,2)
+ async def test_forecast_chat_has_readable_summary_and_saved_link(self):
+  html=application_page()
+  for marker in ("function formatForecastAI", "[[prediction:", "chat-prediction-link", "openPrediction('${prediction}')", "Я — искусственный интеллект проекта Perfecta"):
+   self.assertIn(marker,html)
  async def test_public_ai_error_hides_technical_detail(self):
   response={"results":[{"index":0,"status":"failed","detail":"constraint 23514 secret internals"}]}
   public=public_ai_response(response,"ru")
