@@ -73,6 +73,10 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertIn("history=state.messages.slice(0,-2)",html)
   self.assertIn("slice(-24)",html)
   self.assertIn("session_id:state.currentChatId",html)
+ async def test_student_navigation_cannot_open_admin_views(self):
+  html=application_page()
+  self.assertIn("document.querySelectorAll('.admin-only').forEach",html)
+  self.assertIn("(v==='admin'||v==='admin_chats')&&state.me?.role!=='admin'",html)
  async def test_toxic_context_boundary_gets_apology_not_refusal_or_write(self):
   history=[ChatTurn(role="assistant",content="Нет, иди нахуй")]
   for message in ("пипец ты, почему такое говоришь", "вот выше прочитай и ответь почему", "ты почему мне такое говоришь, ахуел"):
