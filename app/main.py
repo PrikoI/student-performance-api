@@ -860,7 +860,8 @@ def deterministic_actions(message,data,locale="ru"):
         words=[word for word in re.findall(r"[a-zа-яёқғіңөұүһә]{4,}",course_name.casefold()) if word not in {"introduction","and","language"}]
         if course_name and words and any(word in text for word in words):
             named_row=row;named_course=course_name;break
-    if named_row is not None and re.search(r"оценк|балл|успева|что скаж|grade|score|performance",text):
+    direct_course_reference=bool(named_row is not None and re.fullmatch(r"\s*(?:по\s+)?"+re.escape(str(named_course))+r"\s*[?.!]*",text,re.I))
+    if named_row is not None and (direct_course_reference or re.search(r"оценк|балл|успева|что скаж|grade|score|performance",text)):
         grade=named_row.get("current_grade")
         if grade is None:
             answer=ai_phrase(locale,f"По предмету «{named_course}» пока нет итоговой оценки.",f"«{named_course}» пәні бойынша қорытынды баға әлі жоқ.",f"There is no current grade for {named_course} yet.")
