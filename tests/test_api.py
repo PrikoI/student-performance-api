@@ -237,6 +237,17 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(action["operation"],"copy_period_subjects")
   prepared=prepared_action(action,data)
   self.assertEqual(prepared["data"]["subjects"],[{"period_id":12,"course_name":"Математика","workload_value":24,"workload_unit":"lessons","credits":None,"entry_method":"ai_assisted"}])
+ async def test_copy_period_understands_ordinal_words_and_preserves_every_subject(self):
+  subjects=[{"performance_id":i,"period_id":11,"course_id":100+i,"current_grade":5,"workload_value":16+i,"workload_unit":"lessons"} for i in range(11)]
+  data={"academic_periods":[{"period_id":11,"period_number":1,"status":"completed"},{"period_id":12,"period_number":2,"status":"active"}],"academic_performance":subjects,"courses":[{"course_id":100+i,"course_name":f"Предмет {i+1}"} for i in range(11)]}
+  action=deterministic_actions("Запиши во вторую четверть всё те же предметы, что и за первую четверть, оценки оставь пустыми",data)[0]
+  prepared=prepared_action(action,data)
+  self.assertEqual(prepared["operation"],"copy_period_subjects");self.assertEqual(len(prepared["data"]["subjects"]),11);self.assertTrue(all("current_grade" not in item for item in prepared["data"]["subjects"]))
+ async def test_ai_can_execute_twelve_distinct_non_mutating_steps(self):
+  actions=[{"operation":"answer","text":str(i)} for i in range(12)]
+  with patch("app.main.all_data",AsyncMock(return_value={})):
+   result=await execute_actions(actions,STUDENT,True)
+  self.assertEqual(len(result["results"]),12);self.assertEqual(result["max_actions"],12)
  async def test_copy_same_semester_subjects_keeps_hours_and_omits_grades(self):
   data={"academic_periods":[{"period_id":21,"period_number":1,"year_id":4,"status":"completed"},{"period_id":22,"period_number":2,"year_id":4,"status":"active"}],"academic_performance":[{"period_id":21,"course_id":8,"current_grade":88,"workload_value":90,"workload_unit":"academic_hours"}],"courses":[{"course_id":8,"course_name":"Programming"}]}
   action=deterministic_actions("Add the same subjects to semester 2 as in semester 1, no grades",data)[0]
