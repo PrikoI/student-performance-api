@@ -61,6 +61,8 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertIn("pending:true",html)
   self.assertIn("function paintChatMessages()",html)
   self.assertIn("optimistic:true",html)
+  self.assertIn("revision!==(window.chatRevision||0)",html)
+  self.assertIn("window.chatRequestInFlight||revision",html)
  async def test_conversation_after_operator_is_not_a_data_change(self):
   self.assertFalse(explicit_academic_change_intent("ты почему мне такое говоришь"))
   self.assertFalse(explicit_academic_change_intent("это было странно, объясни"))
@@ -69,6 +71,7 @@ class APITests(unittest.IsolatedAsyncioTestCase):
  async def test_current_chat_history_is_sent_back_to_ai(self):
   html=application_page()
   self.assertIn("history=state.messages.slice(0,-2)",html)
+  self.assertIn("slice(-24)",html)
   self.assertIn("session_id:state.currentChatId",html)
  async def test_toxic_context_boundary_gets_apology_not_refusal_or_write(self):
   history=[ChatTurn(role="assistant",content="Нет, иди нахуй")]
@@ -441,7 +444,6 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertIn("Background account loading failed",html)
   self.assertIn("new AbortController()",html)
 if __name__=="__main__":unittest.main()
-
 
 
 
