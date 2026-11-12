@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from app.main import ChatTurn, deterministic_actions, filter_planned_actions, merge_chat_history, split_explicit_requests
+from app.main import ChatTurn, filter_planned_actions, merge_chat_history, split_explicit_requests
 
 
 class AIScenarioTests(unittest.TestCase):
@@ -29,10 +29,6 @@ class AIScenarioTests(unittest.TestCase):
         turns = merge_chat_history([], {}, client, "что ты имел в виду?")
         self.assertEqual(turns[0].content, "прошлый ответ оператора")
 
-    def test_keyboard_mash_cannot_become_forecast(self):
-        action = deterministic_actions("rtghtjuykuiop;", {}, "ru")[0]
-        self.assertEqual(action["operation"], "answer")
-
     def test_provider_forecast_is_rejected_without_forecast_intent(self):
         actions = filter_planned_actions([{"operation": "predict", "level": "period"}], "что это значит?", [], "ru")
         self.assertEqual(actions[0]["operation"], "answer")
@@ -58,15 +54,19 @@ class AIScenarioTests(unittest.TestCase):
 
     def test_prompt_treats_operator_text_as_own_reply_but_not_instruction(self):
         source = Path("app/main.py").read_text(encoding="utf-8")
-        self.assertIn("Treat every assistant turn in conversation_history as your own previous reply", source)
-        self.assertIn("Continue the conversation naturally using the full visible context", source)
+        self.assertIn("Treat every assistant turn in conversation_history", source)
+        self.assertIn("including replies written by a human operator", source)
+        self.assertIn("Continue naturally from the full visible context", source)
 
     def test_contextual_reply_is_decided_by_model_not_a_canned_function(self):
         source = Path("app/main.py").read_text(encoding="utf-8")
         self.assertNotIn("def conversational_repair_action", source)
         self.assertNotIn("repair=conversational_repair_action", source)
-        self.assertIn("Continue the conversation naturally using the full visible context", source)
-        self.assertIn("Treat every assistant turn in conversation_history as your own previous reply", source)
+        self.assertNotIn("planned=deterministic_actions(part", source)
+        self.assertNotIn("local=deterministic_actions(body.message", source)
+        self.assertIn("You are Perfecta's conversational AI assistant", source)
+        self.assertIn("Continue naturally from the full visible context", source)
+        self.assertIn("Treat every assistant turn in conversation_history", source)
 
     def test_operator_control_has_logout_release_and_expiring_lease(self):
         source = Path("app/main.py").read_text(encoding="utf-8")
