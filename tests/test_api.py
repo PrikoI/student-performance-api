@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from app.academics import historical_projection, forecast
-from app.main import Calculation, Chat, ChatTurn, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, split_explicit_requests, plan_all_requests, explicit_academic_change_intent, conversational_repair_action, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, public_ai_response, admin_page, admin_assistant, app
+from app.main import Calculation, Chat, ChatTurn, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, split_explicit_requests, plan_all_requests, explicit_academic_change_intent, conversational_repair_action, merge_chat_history, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, public_ai_response, admin_page, admin_assistant, app
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -179,6 +179,17 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(actions[0]["operation"],"answer");self.assertIn("5 кредитов",actions[0]["text"])
   self.assertEqual(deterministic_actions("5+5?",{},"ru")[0]["text"],"5 + 5 = 10")
   self.assertIn("Привет",deterministic_actions("Привет",{},"ru")[0]["text"])
+ async def test_keyboard_mash_does_not_reach_model_or_trigger_tools(self):
+  action=deterministic_actions("rtghtjuykuiop;",{},"ru")[0]
+  self.assertEqual(action["operation"],"answer");self.assertIn("понять",action["text"])
+ async def test_provider_cannot_invent_prediction_without_forecast_intent(self):
+  with patch("app.main.plan_actions",AsyncMock(return_value=[{"operation":"predict","level":"period"}])):
+   actions=await plan_all_requests("объясни это",{}, {},"ru",[])
+  self.assertEqual(actions[0]["operation"],"answer");self.assertIn("понять",actions[0]["text"])
+ async def test_explicit_forecast_intent_keeps_prediction_action(self):
+  with patch("app.main.plan_actions",AsyncMock(return_value=[{"operation":"predict","level":"next_period"}])):
+   actions=await plan_all_requests("Сделай прогноз",{}, {},"ru",[])
+  self.assertEqual(actions,[{"operation":"predict","level":"next_period"}])
  async def test_ai_reads_latest_completed_period_when_active_period_is_empty(self):
   data={"academic_periods":[{"period_id":1,"period_number":1,"status":"completed","settings_id":1},{"period_id":2,"period_number":2,"status":"active","settings_id":1}],"academic_settings":[{"settings_id":1,"calendar_type":"quarter"}],"academic_performance":[{"period_id":1,"course_id":1,"current_grade":5,"workload_unit":"lessons","workload_value":24}],"courses":[{"course_id":1,"course_name":"Алгебра"}]}
   answer=deterministic_actions("Покажи средний балл",data)[0]["text"]
@@ -202,6 +213,26 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   html=application_page()
   for marker in ("function formatForecastAI", "[[prediction:", "chat-prediction-link", "openPrediction('${prediction}')", "Я — искусственный интеллект проекта Perfecta"):
    self.assertIn(marker,html)
+  self.assertIn("function safeFormatAI",html)
+  self.assertIn("AI response formatting failed",html)
+  self.assertIn("AI error message was not persisted",html)
+ async def test_chat_accepts_longer_active_history_for_operator_continuity(self):
+  turns=[{"role":"assistant" if i%2 else "user","content":f"turn {i}"} for i in range(24)]
+  body=Chat(message="продолжай",history=turns)
+  self.assertEqual(len(body.history),24)
+  source=Path("app/main.py").read_text(encoding="utf-8")
+  self.assertIn('item.get("role") in ("user","assistant")',source)
+  self.assertNotIn('item.get("author_type")=="ai"',source)
+ async def test_active_chat_is_authoritative_and_operator_reply_is_remembered(self):
+  stored=[{"message_id":1,"role":"user","content":"старый чат"},{"message_id":10,"role":"assistant","content":"дубликат"}]
+  current={"messages":[{"message_id":10,"role":"assistant","content":"дубликат"},{"message_id":11,"role":"assistant","content":"Нет, мне лень"},{"message_id":12,"role":"user","content":"почему ты так написал?"}]}
+  merged=merge_chat_history(stored,current,[],"почему ты так написал?")
+  self.assertEqual([x.content for x in merged],["старый чат","дубликат","Нет, мне лень"])
+  self.assertEqual(merged[-1].role,"assistant")
+ async def test_client_history_is_fallback_when_active_session_cannot_load(self):
+  client=[ChatTurn(role="user",content="вопрос выше"),ChatTurn(role="assistant",content="предыдущий ответ")]
+  merged=merge_chat_history([],{},client,"что ты имел в виду?")
+  self.assertEqual([x.content for x in merged],["вопрос выше","предыдущий ответ"])
  async def test_public_ai_error_hides_technical_detail(self):
   response={"results":[{"index":0,"status":"failed","detail":"constraint 23514 secret internals"}]}
   public=public_ai_response(response,"ru")
@@ -217,6 +248,11 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(body.history[0].role,"assistant")
   html=application_page();self.assertIn("conversation_history",Path("app/main.py").read_text(encoding="utf-8"))
   self.assertIn("slice(0,-2)",html);self.assertIn("history,session_id:state.currentChatId",html)
+  self.assertIn("*safe_history",Path("app/main.py").read_text(encoding="utf-8"))
+ async def test_prompt_requires_contextual_followups_without_generic_refusal(self):
+  source=Path("app/main.py").read_text(encoding="utf-8")
+  for marker in ('Treat every assistant turn in conversation_history as your own previous reply','Never deny that a visible previous message exists','For harmless casual questions, answer normally'):
+   self.assertIn(marker,source)
  async def test_persistent_chat_ui_defaults_to_ai_and_has_sessions(self):
   html=application_page()
   self.assertIn("assistantMode:'ai'",html);self.assertIn("/ai/sessions",html)
@@ -448,6 +484,7 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertIn("Background account loading failed",html)
   self.assertIn("new AbortController()",html)
 if __name__=="__main__":unittest.main()
+
 
 
 
