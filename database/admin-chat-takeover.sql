@@ -17,11 +17,26 @@ create table if not exists private.ai_chat_operator_audit(
 alter table private.ai_chat_operator_audit enable row level security;
 revoke all on private.ai_chat_operator_audit from public,anon,authenticated;
 
+create or replace function private.ai_chat_expire_operator_control(p_session_id bigint default null) returns integer
+language plpgsql security definer set search_path='' as $$
+declare released integer;
+begin
+ update private.ai_chat_sessions
+ set control_mode='ai',operator_account_id=null,control_updated_at=now()
+ where control_mode='operator'
+   and control_updated_at < now()-interval '30 minutes'
+   and (p_session_id is null or session_id=p_session_id);
+ get diagnostics released=row_count;
+ return released;
+end $$;
+revoke all on function private.ai_chat_expire_operator_control(bigint) from public,anon,authenticated;
+
 create or replace function private.ai_chat_control_state(p_session_token text,p_session_id bigint) returns jsonb
 language plpgsql security definer set search_path='' as $$
 declare sid integer; result jsonb;
 begin
  sid=private.session_student(p_session_token);
+ perform private.ai_chat_expire_operator_control(p_session_id);
  select jsonb_build_object('session_id',s.session_id,'control_mode',s.control_mode,'updated_at',s.control_updated_at)
  into result from private.ai_chat_sessions s where s.session_id=p_session_id and s.student_id=sid;
  if result is null then raise exception 'Chat not found' using errcode='P0002'; end if;
@@ -33,6 +48,7 @@ language plpgsql security definer set search_path='' as $$
 declare a public.accounts;
 begin
  a=private.api_account(p_token);if a.role<>'admin' then raise exception 'Administrator required' using errcode='42501';end if;
+ perform private.ai_chat_expire_operator_control(null);
  return coalesce((select jsonb_agg(to_jsonb(x) order by x.updated_at desc) from (
   select s.session_id,s.student_id,st.full_name,s.title,s.mode,s.control_mode,s.control_updated_at,s.created_at,s.updated_at,
    (select left(m.content,180) from private.ai_chat_messages m where m.session_id=s.session_id order by m.message_id desc limit 1) last_message
@@ -45,6 +61,7 @@ language plpgsql security definer set search_path='' as $$
 declare a public.accounts; session_row jsonb;
 begin
  a=private.api_account(p_token);if a.role<>'admin' then raise exception 'Administrator required' using errcode='42501';end if;
+ perform private.ai_chat_expire_operator_control(p_session_id);
  select to_jsonb(x) into session_row from (select s.*,st.full_name from private.ai_chat_sessions s join public.students st using(student_id) where s.session_id=p_session_id) x;
  if session_row is null then raise exception 'Chat not found' using errcode='P0002';end if;
  return jsonb_build_object('session',session_row,'messages',coalesce((select jsonb_agg(to_jsonb(m) order by m.message_id) from
@@ -64,17 +81,30 @@ begin
  return to_jsonb(result);
 end $$;
 
+create or replace function private.ai_chat_admin_release_all(p_token text) returns integer
+language plpgsql security definer set search_path='' as $$
+declare a public.accounts; released integer;
+begin
+ a=private.api_account(p_token);if a.role<>'admin' then raise exception 'Administrator required' using errcode='42501';end if;
+ update private.ai_chat_sessions
+ set control_mode='ai',operator_account_id=null,control_updated_at=now()
+ where control_mode='operator' and operator_account_id=a.account_id;
+ get diagnostics released=row_count;
+ return released;
+end $$;
+
 create or replace function private.ai_chat_admin_append(p_token text,p_session_id bigint,p_content text) returns jsonb
 language plpgsql security definer set search_path='' as $$
 declare a public.accounts; s private.ai_chat_sessions; result private.ai_chat_messages;
 begin
  a=private.api_account(p_token);if a.role<>'admin' then raise exception 'Administrator required' using errcode='42501';end if;
  if char_length(trim(p_content)) not between 1 and 12000 then raise exception 'Invalid message' using errcode='22023';end if;
+ perform private.ai_chat_expire_operator_control(p_session_id);
  select * into s from private.ai_chat_sessions where session_id=p_session_id for update;
  if s.session_id is null then raise exception 'Chat not found' using errcode='P0002';end if;
  if s.control_mode<>'operator' or s.operator_account_id is distinct from a.account_id then raise exception 'Take over this chat first' using errcode='42501';end if;
  insert into private.ai_chat_messages(session_id,student_id,role,content,mode,author_type) values(p_session_id,s.student_id,'assistant',trim(p_content),'ai','operator') returning * into result;
- update private.ai_chat_sessions set updated_at=now() where session_id=p_session_id;
+ update private.ai_chat_sessions set updated_at=now(),control_updated_at=now() where session_id=p_session_id;
  insert into private.ai_chat_operator_audit(session_id,admin_account_id,event_type) values(p_session_id,a.account_id,'message');
  return to_jsonb(result);
 end $$;
@@ -84,8 +114,11 @@ create or replace function public.ai_chat_admin_list(p_token text) returns jsonb
 create or replace function public.ai_chat_admin_get(p_token text,p_session_id bigint) returns jsonb language sql security definer set search_path='' as $$select private.ai_chat_admin_get(p_token,p_session_id)$$;
 create or replace function public.ai_chat_admin_control(p_token text,p_session_id bigint,p_control text) returns jsonb language sql security definer set search_path='' as $$select private.ai_chat_admin_control(p_token,p_session_id,p_control)$$;
 create or replace function public.ai_chat_admin_append(p_token text,p_session_id bigint,p_content text) returns jsonb language sql security definer set search_path='' as $$select private.ai_chat_admin_append(p_token,p_session_id,p_content)$$;
+create or replace function public.ai_chat_admin_release_all(p_token text) returns integer language sql security definer set search_path='' as $$select private.ai_chat_admin_release_all(p_token)$$;
 revoke all on function public.ai_chat_control_state(text,bigint),public.ai_chat_admin_list(text),public.ai_chat_admin_get(text,bigint),public.ai_chat_admin_control(text,bigint,text),public.ai_chat_admin_append(text,bigint,text) from public;
 grant execute on function public.ai_chat_control_state(text,bigint),public.ai_chat_admin_list(text),public.ai_chat_admin_get(text,bigint),public.ai_chat_admin_control(text,bigint,text),public.ai_chat_admin_append(text,bigint,text) to anon,authenticated;
+revoke all on function public.ai_chat_admin_release_all(text) from public;
+grant execute on function public.ai_chat_admin_release_all(text) to anon,authenticated;
 
 create or replace function private.ai_chat_append(p_session_token text,p_session_id bigint,p_role text,p_content text,p_mode text default 'ai') returns jsonb
 language plpgsql security definer set search_path='' as $$

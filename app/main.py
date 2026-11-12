@@ -248,6 +248,12 @@ async def agreement_stats(me=Depends(identity)):
 
 @app.post("/auth/logout")
 async def logout(me=Depends(identity)):
+    if me.get("role")=="admin":
+        try:await rpc("ai_chat_admin_release_all",{"p_token":me["token"]})
+        except HTTPException as exc:
+            # Logout must remain available while the matching database update
+            # is rolling out. Forgotten control still has a database lease.
+            if exc.status_code not in (404,422,500):raise
     await rpc("logout_student",{"p_session_token":me["token"]});return {"logged_out":True}
 @app.post("/account/password/verify")
 async def verify_account_password(body:CurrentPassword,me=Depends(identity)):
@@ -714,7 +720,7 @@ async def plan_all_requests(message,data,c,locale="ru",history=None):
         # academic calculation. Tool actions need a matching user intent.
         planned=filter_planned_actions(planned,part,history,locale)
         if any(a.get("operation") in {"write","create_subject","import_profile","copy_period_subjects"} for a in planned) and not explicit_academic_change_intent(part):
-            planned=[a for a in planned if a.get("operation")=="answer"] or [{"operation":"answer","text":ai_phrase(locale,"Я понял это как вопрос или реакцию на предыдущий ответ. Учебные данные изменять не буду. Уточните, что именно в ответе показалось неправильным — я объясню.","Мен мұны алдыңғы жауапқа қатысты сұрақ немесе реакция деп түсіндім. Оқу деректерін өзгертпеймін. Жауаптың нақты қай жері дұрыс емес екенін айтыңыз — түсіндіремін.","I understood this as a question or reaction to the previous reply. I will not change academic data. Tell me what seemed wrong in the reply and I will explain.","我将其理解为对上一条回复的疑问或反应，不会修改学习数据。请说明回复中哪里不对，我会解释。","Entendí esto como una pregunta o reacción a la respuesta anterior. No modificaré los datos académicos. Dime qué parte pareció incorrecta y la explicaré.")}]
+            planned=[a for a in planned if a.get("operation")=="answer"] or [{"operation":"answer","text":ai_phrase(locale,"Похоже, я неверно понял вашу реплику. Уточните, пожалуйста, что именно в предыдущем ответе показалось неправильным — я отвечу по существу.","Сіздің сөзіңізді дұрыс түсінбеген сияқтымын. Алдыңғы жауаптың нақты қай жері дұрыс емес екенін айтыңызшы — мәні бойынша жауап беремін.","It looks like I misunderstood you. Please tell me what seemed wrong in my previous reply, and I will address it directly.","看来我误解了您的意思。请指出上一条回复中哪里不对，我会直接回应。","Parece que entendí mal tu mensaje. Dime qué parte de mi respuesta anterior te pareció incorrecta y responderé directamente.")}]
         actions.extend(planned[:remaining])
     return actions
 
@@ -734,11 +740,11 @@ def conversational_repair_action(message,history,locale="ru"):
     academic_question=bool(re.search(r"(?:оцен|балл|прогноз|предмет|посещ|кредит|grade|forecast|subject|attendance|credit|баға|болжам|пән|成绩|预测|课程|nota|pron[oó]stico|asignatura)",text))
     if not targets_reply or not (complaint or reference) or (academic_question and not complaint):return None
     reply=ai_phrase(locale,
-      "Извините. Предыдущий ответ был неуместным и не учитывал контекст разговора. Так отвечать не следовало. Я должен был спокойно продолжить диалог или уточнить вашу просьбу, а не повторять отказ. Учебные данные я при этом не изменял.",
-      "Кешіріңіз. Алдыңғы жауап орынсыз болды және әңгіме мәнмәтінін ескермеді. Бұлай жауап бермеуім керек еді. Бас тартуды қайталамай, диалогты сабырлы жалғастыруым немесе өтінішіңізді нақтылауым керек еді. Оқу деректеріңіз өзгертілген жоқ.",
-      "I am sorry. The previous reply was inappropriate and ignored the conversation context. I should have continued calmly or asked what you meant instead of repeating a refusal. I did not change any academic data.",
-      "抱歉。上一条回复不合适，也没有考虑对话上下文。我本应平静地继续交流或询问您的意思，而不是重复拒绝。您的学习数据没有被修改。",
-      "Lo siento. La respuesta anterior fue inapropiada y no tuvo en cuenta el contexto. Debí continuar con calma o pedir una aclaración en lugar de repetir una negativa. No modifiqué ningún dato académico.")
+      "Извините. Предыдущий ответ был грубым и неуместным. Так отвечать не следовало. Давайте продолжим нормально — я постараюсь спокойно и по существу помочь с вашим вопросом.",
+      "Кешіріңіз. Алдыңғы жауап дөрекі әрі орынсыз болды. Бұлай жауап бермеуім керек еді. Қалыпты жалғастырайық — сұрағыңызға сабырмен және нақты көмектесуге тырысамын.",
+      "I am sorry. My previous reply was rude and inappropriate. I should not have answered that way. Let us continue normally, and I will try to help calmly and directly.",
+      "抱歉。上一条回复既粗鲁又不恰当，我不应该那样回答。让我们正常继续，我会尽量冷静、直接地帮助您。",
+      "Lo siento. Mi respuesta anterior fue grosera e inapropiada. No debí responder así. Sigamos con normalidad e intentaré ayudarte de forma tranquila y directa.")
     return [{"operation":"answer","text":reply}]
 
 def deterministic_actions(message,data,locale="ru"):
