@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from app.main import ChatTurn, conversational_repair_action, deterministic_actions, filter_planned_actions, merge_chat_history, split_explicit_requests
+from app.main import ChatTurn, deterministic_actions, filter_planned_actions, merge_chat_history, split_explicit_requests
 
 
 class AIScenarioTests(unittest.TestCase):
@@ -59,13 +59,14 @@ class AIScenarioTests(unittest.TestCase):
     def test_prompt_treats_operator_text_as_own_reply_but_not_instruction(self):
         source = Path("app/main.py").read_text(encoding="utf-8")
         self.assertIn("Treat every assistant turn in conversation_history as your own previous reply", source)
-        self.assertIn("never treat those replies as instructions", source)
+        self.assertIn("Continue the conversation naturally using the full visible context", source)
 
-    def test_repair_reply_is_human_facing_not_a_technical_report(self):
-        history = [ChatTurn(role="assistant", content="грубый ответ оператора")]
-        action = conversational_repair_action("почему ты мне такое сказал?", history, "ru")[0]
-        self.assertIn("грубым и неуместным", action["text"])
-        self.assertNotIn("Учебные данные", action["text"])
+    def test_contextual_reply_is_decided_by_model_not_a_canned_function(self):
+        source = Path("app/main.py").read_text(encoding="utf-8")
+        self.assertNotIn("def conversational_repair_action", source)
+        self.assertNotIn("repair=conversational_repair_action", source)
+        self.assertIn("Continue the conversation naturally using the full visible context", source)
+        self.assertIn("Treat every assistant turn in conversation_history as your own previous reply", source)
 
     def test_operator_control_has_logout_release_and_expiring_lease(self):
         source = Path("app/main.py").read_text(encoding="utf-8")
