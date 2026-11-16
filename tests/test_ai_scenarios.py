@@ -68,6 +68,20 @@ class AIScenarioTests(unittest.TestCase):
         self.assertIn("Continue naturally from the full visible context", source)
         self.assertIn("Treat every assistant turn in conversation_history", source)
 
+    def test_language_profile_is_authoritative_after_login(self):
+        html = Path("app/app.html").read_text(encoding="utf-8")
+        self.assertNotIn("LANGUAGE_OVERRIDE_KEY", html)
+        self.assertNotIn("state.prefs.language=detectDeviceLanguage();api('/tables/user_preferences'", html)
+        self.assertIn("state.prefs={...DEFAULT_PREFS,...savedPrefs}", html)
+        self.assertIn("const initialLanguage=detectDeviceLanguage()", html)
+        self.assertIn("state.prefs={...DEFAULT_PREFS,language}", html)
+
+    def test_prompt_handles_school_workload_and_previous_reply_directly(self):
+        source = Path("app/main.py").read_text(encoding="utf-8")
+        self.assertIn("do not substitute repeated apologies", source)
+        self.assertIn("a quarter-school profile uses lessons, not credits", source)
+        self.assertIn("Answer simple questions about the user's grades", source)
+
     def test_operator_control_has_logout_release_and_expiring_lease(self):
         source = Path("app/main.py").read_text(encoding="utf-8")
         sql = Path("database/admin-chat-takeover.sql").read_text(encoding="utf-8")
