@@ -1,7 +1,13 @@
 import unittest
-from app.academics import calculate,forecast,grade_points,normalize_grade_percent,normalized_academic_snapshot
+from app.academics import calculate,forecast,grade_points,normalize_grade_percent,normalized_academic_snapshot,personal_baseline_estimate
 
 class AcademicTests(unittest.TestCase):
+ def test_improved_baseline_uses_bounded_personal_signals(self):
+  snapshot={"current_score_percent":70,"recent_score_percent":80,"attendance_percent":95,
+            "assignment_completion_percent":80,"period_progress_percent":50}
+  result=personal_baseline_estimate(snapshot,[60,65,68])
+  self.assertGreater(result["estimate"],70);self.assertLess(result["estimate"],80)
+  self.assertLess(result["lower"],result["estimate"]);self.assertGreater(result["upper"],result["estimate"])
  def test_academic_hours_can_weight_average(self):
   result=calculate([{"grade":80,"workload_value":30,"workload_unit":"academic_hours"},{"grade":100,"workload_value":10,"workload_unit":"academic_hours"}])
   self.assertEqual(result["average"],85);self.assertEqual(result["workload_total"],40);self.assertEqual(result["workload_unit"],"academic_hours")
@@ -19,10 +25,10 @@ class AcademicTests(unittest.TestCase):
   self.assertEqual(calculate([{"grade":80,"credits":1},{"grade":100,"credits":1}],bands)["gpa"],3.5)
  def test_zero_weight(self):
   with self.assertRaises(ValueError):calculate([{"grade":85,"credits":0}])
- def test_baseline_not_automatic_bonus(self):
+ def test_baseline_blends_recent_evidence_without_automatic_bonus(self):
   d=self.data()
   r=forecast(d,1)
-  self.assertEqual(r["average"],78)
+  self.assertEqual(r["average"],78.8)
   self.assertTrue(r["is_illustrative"])
  def test_adaptive_forecast_uses_graded_work_and_reports_method(self):
   d=self.data()
@@ -61,6 +67,16 @@ class AcademicTests(unittest.TestCase):
   self.assertEqual(result["normalization_version"],"normalized-academic-v1")
   self.assertEqual(result["model_manifest"][0]["key"],"academic-normalizer")
   self.assertTrue(any(item["role"]=="personal" for item in result["model_manifest"]))
+ def test_multilevel_forecast_adds_validated_ml_layers(self):
+  d=self.data()
+  samples=[]
+  for i in range(100):
+   stage1=30+i%65;stage2=stage1+(i%7-3);final=.4*stage1+.6*stage2
+   samples.append({"stage1":stage1,"stage2":stage2,"final":final,"absences":i%10})
+  result=forecast(d,1,reference={"samples":samples,"datasets":[]})
+  keys={item["key"] for item in result["model_manifest"]}
+  self.assertIn("gradient-boosting-grade",keys);self.assertIn("gradient-boosting-risk",keys)
+  self.assertIsNotNone(result["risk_summary"]["average_probability"])
  def test_quarter_adaptive_forecast_uses_school_scale_and_lessons(self):
   d=self.data();d["academic_settings"][0].update(calendar_type="quarter",grading_scale="five_point",grade_min=2,grade_max=5)
   d["academic_performance"][0].update(current_grade=5,credits=None,workload_value=24,workload_unit="lessons")
@@ -92,7 +108,6 @@ class AcademicTests(unittest.TestCase):
    "academic_years":[{"year_id":1}],"grading_bands":[]}
 
 if __name__=="__main__":unittest.main()
-
 
 
 
