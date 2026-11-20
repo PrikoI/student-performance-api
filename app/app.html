@@ -455,13 +455,3 @@ async function verifyDeletionPassword(){const s=securityCopy(),password=$('#dele
 async function deleteAccount(){const s=securityCopy(),password=pendingDeletionPassword;pendingDeletionPassword='';if(!password){closeModal();return}try{$('#modalMsg').textContent=s.deleting;await api('/account/delete','POST',{confirm:true,current_password:password});clearStoredSession();state.token='';alert(s.deleted);location.reload()}catch(e){$('#modalMsg').textContent=s.failed+securityError(e.message,s)}}async function logout(){try{await api('/auth/logout','POST')}catch{}clearStoredSession();state.token='';location.reload()}
 bootstrap();
 </script></body></html>
-MethodInvocationException: 
-Line |
-  16 |  … /app.html');[Console]::Out.Write($s.Substring(360000,[Math]::Min(9000 …
-     |                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-     | Exception calling "Substring" with "2" argument(s): "startIndex cannot be larger than length of string. (Parameter 'startIndex')"
-MethodInvocationException: 
-Line |
-  16 |  … /app.html');[Console]::Out.Write($s.Substring(450000,[Math]::Min(9000 …
-     |                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-     | Exception calling "Substring" with "2" argument(s): "startIndex cannot be larger than length of string. (Parameter 'startIndex')"
