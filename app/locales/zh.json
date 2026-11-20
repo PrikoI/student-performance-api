@@ -1,0 +1,12 @@
+{
+  "academics": {
+    "title":"学业数据","subtitle":"无需输入数据库编号即可添加课程、成绩和作业结果。",
+    "tabs":{"results":"成绩","structure":"项目与学期","grading":"评分标准","assessments":"作业与成绩","courses":"课程"},
+    "structure":{"title":"学习结构","hint":"培养项目包含学年，每个学年包含相应学期。","setup":"设置培养项目","programs":"培养项目","years":"学年","periods":"学期","addPeriod":"添加学期","empty":"请先创建培养项目，再添加学年和学期。"},
+    "grading":{"title":"当前评分标准","hint":"此标准用于换算成绩、计算 GPA 和显示预测。","range":"分数范围","grade":"等级","points":"GPA 分值","inactive":"其他可用标准","empty":"当前学期尚未关联评分标准。"},
+    "assessment":{"title":"作业与成绩","hint":"先选择课程，再添加评分类别、具体作业及其结果。","subject":"课程","category":"评分类别","assessment":"作业","result":"结果","addCategory":"添加类别","addAssessment":"添加作业","addResult":"添加结果","empty":"尚未添加内容。"},
+    "fields":{"actions":"操作","name":"名称","type":"类型","weight":"权重","maximum":"最高分","due":"截止日期","status":"状态","year":"学年","period":"学期","institution":"学校","program":"培养项目","educationLevel":"教育层次","duration":"学制（年）","credits":"所需学分","calendar":"教学日历","periodCount":"学期数量","yearNumber":"学年序号","start":"开始日期","end":"结束日期","plannedLessons":"计划课时","grading":"评分系统","minimum":"最低分","score":"分数"},
+    "actions":{"edit":"编辑","delete":"删除","save":"保存","cancel":"取消"}
+  }
+}
+

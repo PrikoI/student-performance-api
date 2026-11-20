@@ -417,6 +417,15 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   for marker in ("private.forecast_feature_snapshots","private.forecast_snapshot_outcomes","private.forecast_model_registry","private.forecast_model_evaluations","private.forecast_ensemble_weights","private.forecast_training_rows"):
    self.assertIn(marker,migration)
   self.assertIn("enable row level security",migration)
+ async def test_academic_workspace_uses_i18next_resources_and_named_selects(self):
+  html=application_page();root=Path(__file__).parents[1]
+  for language in ("en","ru","kk","zh","es"):
+   payload=json.loads(root.joinpath("app","locales",language+".json").read_text(encoding="utf-8"))
+   self.assertIn("academics",payload);self.assertIn("assessment",payload["academics"])
+  for marker in ("/vendor/i18next.min.js","ensureI18n(","applyDataI18n(","entityFieldOptions(","academic-programs","assessment-flow","academics.structure.addPeriod"):
+   self.assertIn(marker,html)
+  self.assertIn('@app.get("/locales/{language}.json"',root.joinpath("app","main.py").read_text(encoding="utf-8"))
+  self.assertNotIn("ID результата предмета</label><input",html)
  async def test_mobile_drawer_is_vertical_and_closable(self):
   html=application_page()
   for marker in ('class="mobile-sidebar-close"','.sidebar .nav{display:grid!important','overflow-y:auto!important','.sidebar .profile{display:flex!important'):self.assertIn(marker,html)
