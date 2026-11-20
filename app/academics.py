@@ -3,6 +3,7 @@ import math
 import re
 from datetime import date
 from statistics import mean
+from .forecast_models import multilevel_ml_prediction
 
 def item_weight(item):
     if item.get("credits") is not None:return item["credits"]
@@ -87,6 +88,33 @@ def normalized_academic_snapshot(record, period, settings, captured_on=None):
         "raw_current_grade":record.get("current_grade"),"raw_recent_assessment_score":record.get("recent_assessment_score")
     }
 
+def personal_baseline_estimate(snapshot, prior_scores=None):
+    """Explainable personal forecast with bounded evidence adjustments."""
+    current=float(snapshot["current_score_percent"]);estimate=current
+    recent=snapshot.get("recent_score_percent");evidence=[("current",current,1.0)]
+    if recent is not None:
+        progress=snapshot.get("period_progress_percent")
+        recent_weight=.12 if progress is None else min(.25,.10+.0015*progress)
+        estimate=(1-recent_weight)*estimate+recent_weight*float(recent)
+        evidence.append(("recent",float(recent),recent_weight))
+    history=[float(x) for x in (prior_scores or []) if x is not None and math.isfinite(float(x))]
+    if history:
+        recent_history=history[-3:];history_weight=min(.22,.08+.04*len(recent_history))
+        recency=sum(score*(i+1) for i,score in enumerate(recent_history))/sum(range(1,len(recent_history)+1))
+        estimate=(1-history_weight)*estimate+history_weight*recency
+        evidence.append(("personal_history",recency,history_weight))
+    attendance=snapshot.get("attendance_percent")
+    if attendance is not None:
+        adjustment=max(-4,min(2.5,(float(attendance)-80)*.12));estimate+=adjustment
+        evidence.append(("attendance_adjustment",adjustment,None))
+    completion=snapshot.get("assignment_completion_percent");progress=snapshot.get("period_progress_percent")
+    if completion is not None and progress is not None:
+        adjustment=max(-4,min(4,(float(completion)-float(progress))*.06));estimate+=adjustment
+        evidence.append(("completion_adjustment",adjustment,None))
+    spread=4.5+(2 if recent is None else 0)+(1.5 if not history else 0)+(1 if attendance is None else 0)+(1 if completion is None else 0)
+    estimate=max(0,min(100,estimate))
+    return {"estimate":estimate,"lower":max(0,estimate-spread),"upper":min(100,estimate+spread),"evidence":evidence}
+
 def calculate(items, bands=None, conversions=None):
     units={x.get("workload_unit","credits") for x in items}
     if len(units)>1 and (not conversions or any(u not in conversions for u in units)):
@@ -139,15 +167,22 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
     if not records: raise ValueError("No academic records in this period")
     bands=[b for b in data.get("grading_bands",[]) if b["scale_id"]==settings.get("scale_id")]
     actual={x["performance_id"]:x for x in data.get("actual_results",[])}
+    settings_by_id={x["settings_id"]:x for x in data["academic_settings"]}
     estimates=[]
     for r in records:
         if r.get("current_grade") is None: continue
         raw_current=float(r["current_grade"])
         snapshot=normalized_academic_snapshot(r,period,settings)
         current=snapshot["current_score_percent"]
-        # Conservative baseline: current performance with a small recent-assessment signal.
-        recent=snapshot["recent_score_percent"]
-        baseline=current if recent is None else .8*current+.2*recent
+        prior=[]
+        for old in data["academic_performance"]:
+            if old.get("course_id")!=r.get("course_id") or old.get("performance_id")==r.get("performance_id"):continue
+            old_period=periods.get(old.get("period_id"));outcome=actual.get(old.get("performance_id"),{}).get("final_grade")
+            if not old_period or old_period.get("status")!="completed" or outcome is None:continue
+            old_settings=settings_by_id.get(old_period.get("settings_id"))
+            if old_settings:prior.append((old_period.get("end_date") or "",normalize_grade_percent(outcome,old_settings)))
+        baseline_result=personal_baseline_estimate(snapshot,[score for _,score in sorted(prior)])
+        baseline=baseline_result["estimate"]
         estimate=max(lo,min(hi,baseline))
         # External outcomes only temper the personal estimate. They never replace
         # the user's own history and never relax year/program coverage rules.
@@ -155,6 +190,10 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
         if reference_projection:
             historical_on_scale=lo+(hi-lo)*reference_projection["estimate"]/100
             estimate=.75*estimate+.25*historical_on_scale
+        ml=multilevel_ml_prediction(snapshot,reference)
+        ml_weight=.20 if ml and ml["eligible"] else 0
+        if ml_weight:
+            estimate=(1-ml_weight)*estimate+ml_weight*ml["grade"]
         components=[c for c in data.get("assessment_components",[]) if c["performance_id"]==r["performance_id"]]
         adaptive_signals=[]
         if method=="adaptive":
@@ -201,7 +240,12 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
         if r.get("attendance") is not None and float(r["attendance"])<75:signals.append("Attendance below illustrative 75% threshold")
         if r.get("assignments_total") and (r.get("assignments_completed") or 0)<r["assignments_total"]:signals.append("There are unfinished assignments")
         subject_band=grade_band(estimate,bands) if not school_mode else None
+        risk_probability=ml.get("risk_probability") if ml else None
+        risk_level=None if risk_probability is None else ("high" if risk_probability>=60 else "medium" if risk_probability>=30 else "low")
         estimates.append({"performance_id":r["performance_id"],"course_id":r["course_id"],"grade":estimate,"converted_grade":school_grade_from_percent(estimate) if school_mode else (subject_band.get("letter_grade") if subject_band else None),"converted_points":None if school_mode or not subject_band else subject_band.get("grade_points"),"signals":signals,"reference_projection":reference_projection,
+                          "risk_probability":risk_probability,"risk_level":risk_level,"ml_evidence":ml,
+                          "forecast_range":{"lower":round(baseline_result["lower"],2),"upper":round(baseline_result["upper"],2)},
+                          "baseline_evidence":baseline_result["evidence"],
                           "credits":r.get("credits"),"workload_value":r.get("workload_value") or r.get("credits"),"workload_unit":r.get("workload_unit") or "credits","current_grade":raw_current,"normalized_current_percent":current,"normalized_snapshot":snapshot,"exams":exam})
     if not estimates: raise ValueError("Numeric current grades required")
     if not school_mode and any(x["workload_value"] is None for x in estimates):
@@ -271,20 +315,28 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
     ensemble_key="adaptive-reference" if effective_method=="adaptive-reference-v2" else "baseline-reference"
     model_manifest=[
         {"key":"academic-normalizer","version":"v1","role":"preprocessing","weight":None},
-        {"key":personal_key,"version":"v1","role":"personal","weight":.75 if external_used else 1.0},
+        {"key":personal_key,"version":"v2" if personal_key=="personal-baseline" else "v1","role":"personal","weight":.75 if external_used else 1.0},
         {"key":ensemble_key,"version":"v2","role":"orchestration","weight":None},
     ]
     if external_used:model_manifest.append({"key":"historical-projection","version":"v1","role":"external_reference","weight":.25})
+    ml_subjects=sum(bool(x.get("ml_evidence") and x["ml_evidence"].get("eligible")) for x in estimates)
+    if ml_subjects:
+        model_manifest.extend([
+            {"key":"gradient-boosting-grade","version":"v1","role":"grade_forecast","weight":.20},
+            {"key":"gradient-boosting-risk","version":"v1","role":"risk_classification","weight":None},
+        ])
+    risk_values=[x["risk_probability"] for x in estimates if x.get("risk_probability") is not None]
     return {**output,"level":level,"period_id":target_period["period_id"],"source_period_id":period["period_id"],"subjects":estimates,"coverage":coverage,
             "method_version":requested_method,"effective_method_version":effective_method,"adaptive_subjects":adaptive_subjects,"is_illustrative":True,
             "normalization_version":"normalized-academic-v1","model_manifest":model_manifest,
-            "confidence":"low" if coverage.get("current_subjects",0)<3 or level=="period" else "medium",
+            "confidence":"low" if coverage.get("current_subjects",0)<3 else ("medium" if not ml_subjects else "medium-high"),
+            "risk_summary":{"subjects_evaluated":len(risk_values),"average_probability":round(mean(risk_values),1) if risk_values else None,
+                            "high_risk_subjects":sum(x.get("risk_level")=="high" for x in estimates)},
             "reference_model":reference_model,
             "assumption":"Unobserved future work follows personal performance, conservatively tempered by anonymized historical outcomes",
             "limitations":["Not a guaranteed result","External data comes from Portuguese secondary schools and may not transfer to another institution",
                            "External data does not substitute for missing personal periods",
                            "Year/program forecasts remain locked until personal coverage thresholds are met",
                            "No statistical confidence interval is claimed"]}
-
 
 

@@ -518,7 +518,8 @@ async def predict(body:Prediction,me=Depends(identity)):
     # Persist technical provenance, but do not expose it in the student UI or
     # assistant response. Students receive only useful forecast information.
     public_result={k:v for k,v in result.items() if k!="model_manifest"}
-    public_result["subjects"]=[{k:v for k,v in item.items() if k!="normalized_snapshot"} for item in result.get("subjects",[])]
+    hidden_subject_fields={"normalized_snapshot","ml_evidence","baseline_evidence"}
+    public_result["subjects"]=[{k:v for k,v in item.items() if k not in hidden_subject_fields} for item in result.get("subjects",[])]
     return public_result
 
 def cipher():
@@ -1251,8 +1252,4 @@ used_plans={}
 
 @app.get("/admin",response_class=HTMLResponse)
 def admin_page():return Path(__file__).with_name("admin.html").read_text(encoding="utf-8")
-
-
-
-
 

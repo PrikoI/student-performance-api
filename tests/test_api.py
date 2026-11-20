@@ -491,8 +491,6 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertIn("const [loadedData,avatarResponse]=await Promise.all",html)
   self.assertIn("Background account loading failed",html)
   self.assertIn("new AbortController()",html)
+  self.assertIn('hidden_subject_fields={"normalized_snapshot","ml_evidence","baseline_evidence"}',Path(main.__file__).read_text(encoding="utf-8"))
 if __name__=="__main__":unittest.main()
-
-
-
 
