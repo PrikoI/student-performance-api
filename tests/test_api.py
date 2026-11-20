@@ -493,5 +493,3 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertIn("new AbortController()",html)
 if __name__=="__main__":unittest.main()
 
-
-

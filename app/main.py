@@ -1252,6 +1252,3 @@ used_plans={}
 @app.get("/admin",response_class=HTMLResponse)
 def admin_page():return Path(__file__).with_name("admin.html").read_text(encoding="utf-8")
 
-
-
-
