@@ -413,6 +413,10 @@ async def comparable_gpa(calendar:str|None=None,scale_id:int|None=None,me=Depend
 async def forecast_infrastructure(me=Depends(administrator)):
     return await rpc("api_forecast_infrastructure_status",{"p_token":me["token"]})
 
+@app.post("/admin/demo-data/fill")
+async def fill_demo_assessments(me=Depends(administrator)):
+    return await rpc("api_seed_demo_assessments",{"p_token":me["token"]})
+
 @app.post("/admin/assistant")
 async def admin_assistant(body:Chat,me=Depends(administrator)):
     """Multilingual safe admin intents; raw SQL and private credential tables stay unavailable."""
