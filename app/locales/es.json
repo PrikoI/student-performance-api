@@ -1,0 +1,11 @@
+{
+  "academics": {
+    "title":"Datos académicos","subtitle":"Añade asignaturas, notas y resultados sin identificadores de la base de datos.",
+    "tabs":{"results":"Resultados","structure":"Programa y periodos","grading":"Escala de calificación","assessments":"Trabajos y notas","courses":"Asignaturas"},
+    "structure":{"title":"Estructura de estudios","hint":"El programa contiene años académicos y cada año contiene sus periodos.","setup":"Configurar programa","programs":"Programas","years":"Años académicos","periods":"Periodos","addPeriod":"Añadir periodo","empty":"Primero crea un programa y después añade sus años y periodos."},
+    "grading":{"title":"Escala de calificación activa","hint":"Esta escala se utiliza para convertir notas, calcular el GPA y mostrar pronósticos.","range":"Rango de puntuación","grade":"Nota","points":"Puntos GPA","inactive":"Otras escalas disponibles","empty":"El periodo activo no tiene una escala asociada."},
+    "assessment":{"title":"Trabajos y notas","hint":"Primero elige una asignatura y después añade una categoría, un trabajo y su resultado.","subject":"Asignatura","category":"Categoría","assessment":"Trabajo","result":"Resultado","addCategory":"Añadir categoría","addAssessment":"Añadir trabajo","addResult":"Añadir resultado","empty":"Todavía no se ha añadido nada."},
+    "fields":{"actions":"Acciones","name":"Nombre","type":"Tipo","weight":"Peso","maximum":"Puntuación máxima","due":"Fecha límite","status":"Estado","year":"Año académico","period":"Periodo","institution":"Institución","program":"Programa","educationLevel":"Nivel educativo","duration":"Duración en años","credits":"Créditos requeridos","calendar":"Calendario académico","periodCount":"Número de periodos","yearNumber":"Número de año","start":"Fecha de inicio","end":"Fecha de finalización","plannedLessons":"Clases planificadas","grading":"Sistema de calificación","minimum":"Mínimo","score":"Puntuación"},
+    "actions":{"edit":"Editar","delete":"Eliminar","save":"Guardar","cancel":"Cancelar"}
+  }
+}

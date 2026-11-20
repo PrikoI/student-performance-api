@@ -1,0 +1,12 @@
+{
+  "academics": {
+    "title": "Academic data",
+    "subtitle": "Add subjects, grades and assessment results without database identifiers.",
+    "tabs": {"results":"Results","structure":"Program and periods","grading":"Grading scale","assessments":"Assessment details","courses":"Subjects"},
+    "structure": {"title":"Study structure","hint":"Programs contain academic years; each year contains its terms.","setup":"Set up program","programs":"Programs","years":"Academic years","periods":"Terms","addPeriod":"Add term","empty":"Create a program first, then add its academic years and terms."},
+    "grading": {"title":"Your active grading scale","hint":"This is the scale currently used to convert grades, calculate GPA and display forecasts.","range":"Score range","grade":"Grade","points":"GPA points","inactive":"Other available scales","empty":"No grading scale is connected to the active term."},
+    "assessment": {"title":"Assessment details","hint":"Choose a subject first, then add a category, an assessment and its result.","subject":"Subject","category":"Category","assessment":"Assessment","result":"Result","addCategory":"Add category","addAssessment":"Add assessment","addResult":"Add result","empty":"Nothing has been added yet."},
+    "fields": {"actions":"Actions","name":"Name","type":"Type","weight":"Weight","maximum":"Maximum score","due":"Due date","status":"Status","year":"Academic year","period":"Term","institution":"Institution","program":"Program","educationLevel":"Education level","duration":"Duration in years","credits":"Required credits","calendar":"Academic calendar","periodCount":"Number of terms","yearNumber":"Year number","start":"Start date","end":"End date","plannedLessons":"Planned lessons","grading":"Grading system","minimum":"Minimum","score":"Score"},
+    "actions": {"edit":"Edit","delete":"Delete","save":"Save","cancel":"Cancel"}
+  }
+}
