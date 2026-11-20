@@ -42,7 +42,8 @@ async def guard(request:Request,call_next):
     body=await request.body()
     if len(body)>131072:return HTMLResponse("Request too large",413)
     response=await call_next(request)
-    response.headers["Cache-Control"]="public, max-age=604800, immutable" if request.url.path=="/logo.png" else "no-store"
+    asset_path=request.url.path=="/logo.png" or request.url.path.startswith("/vendor/") or request.url.path.startswith("/locales/")
+    response.headers["Cache-Control"]="public, max-age=604800, immutable" if asset_path else "no-store"
     response.headers["X-Content-Type-Options"]="nosniff"
     response.headers["Referrer-Policy"]="no-referrer"
     return response
@@ -195,6 +196,15 @@ def application_page():return Path(__file__).with_name("app.html").read_text(enc
 def application_head():return HTMLResponse("")
 @app.get("/logo.png",response_class=FileResponse)
 def application_logo():return FileResponse(Path(__file__).with_name("logo.png"),media_type="image/png",headers={"Cache-Control":"public, max-age=604800, immutable"})
+
+@app.get("/locales/{language}.json",response_class=FileResponse)
+def locale_resource(language:str):
+    if language not in {"en","ru","kk","zh","es"}:raise HTTPException(404,"Unknown language")
+    return FileResponse(Path(__file__).with_name("locales")/(language+".json"),media_type="application/json",headers={"Cache-Control":"public, max-age=3600"})
+
+@app.get("/vendor/i18next.min.js",response_class=FileResponse)
+def i18next_bundle():
+    return FileResponse(Path(__file__).with_name("vendor")/"i18next.min.js",media_type="text/javascript",headers={"Cache-Control":"public, max-age=604800, immutable"})
 
 def auth_secret():
     value=os.getenv("AUTH_INTERNAL_SECRET")
@@ -399,6 +409,10 @@ async def comparable_gpa(calendar:str|None=None,scale_id:int|None=None,me=Depend
         out.append({"calendar":key[0],"scale_name":f"{key[1]} {key[2]}–{key[3]}","grade_range":[key[2],key[3]],"student_count":len(members),"average_percent":round(sum(valid)/len(valid),2) if valid else None,"students":members})
     return {"comparable":True,"metric":"average_percent","groups":out}
 
+@app.get("/admin/forecast/infrastructure")
+async def forecast_infrastructure(me=Depends(administrator)):
+    return await rpc("api_forecast_infrastructure_status",{"p_token":me["token"]})
+
 @app.post("/admin/assistant")
 async def admin_assistant(body:Chat,me=Depends(administrator)):
     """Multilingual safe admin intents; raw SQL and private credential tables stay unavailable."""
@@ -501,7 +515,11 @@ async def predict(body:Prediction,me=Depends(identity)):
     except (ValueError,KeyError,TypeError) as e:raise HTTPException(422,str(e))
     if body.save:
         result["prediction_id"]=await rpc("api_save_prediction",{"p_token":me["token"],"p_result":result})
-    return result
+    # Persist technical provenance, but do not expose it in the student UI or
+    # assistant response. Students receive only useful forecast information.
+    public_result={k:v for k,v in result.items() if k!="model_manifest"}
+    public_result["subjects"]=[{k:v for k,v in item.items() if k!="normalized_snapshot"} for item in result.get("subjects",[])]
+    return public_result
 
 def cipher():
     key=os.getenv("AI_ENCRYPTION_KEY")

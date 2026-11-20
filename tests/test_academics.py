@@ -1,5 +1,5 @@
 import unittest
-from app.academics import calculate,forecast,grade_points
+from app.academics import calculate,forecast,grade_points,normalize_grade_percent,normalized_academic_snapshot
 
 class AcademicTests(unittest.TestCase):
  def test_academic_hours_can_weight_average(self):
@@ -36,6 +36,31 @@ class AcademicTests(unittest.TestCase):
   r=calculate([{"grade":5,"workload_value":2,"workload_unit":"lessons"},{"grade":4,"workload_value":1,"workload_unit":"lessons"}])
   self.assertEqual(r["average"],4.6667)
   self.assertIsNone(r["gpa"])
+ def test_one_normalized_grade_space_covers_school_and_university(self):
+  school={"calendar_type":"quarter","grading_scale":"five_point","grade_min":2,"grade_max":5}
+  university={"calendar_type":"semester","grading_scale":"percentage","grade_min":0,"grade_max":100}
+  self.assertEqual(normalize_grade_percent(4,school),74.5)
+  self.assertEqual(normalize_grade_percent(74.5,university),74.5)
+ def test_normalized_snapshot_keeps_raw_context_and_common_features(self):
+  record={"current_grade":4,"recent_assessment_score":5,"attendance":80,"assignments_completed":3,"assignments_total":4,"workload_value":24,"workload_unit":"lessons"}
+  period={"start_date":"2026-09-01","end_date":"2026-11-01"}
+  settings={"calendar_type":"quarter","grading_scale":"five_point","grade_min":2,"grade_max":5}
+  snapshot=normalized_academic_snapshot(record,period,settings,"2026-10-01")
+  self.assertEqual(snapshot["schema_version"],"normalized-academic-v1")
+  self.assertEqual(snapshot["current_score_percent"],74.5);self.assertEqual(snapshot["recent_score_percent"],92.5)
+  self.assertEqual(snapshot["raw_current_grade"],4);self.assertEqual(snapshot["assignment_completion_percent"],75)
+  self.assertAlmostEqual(snapshot["period_progress_percent"],49.1803,places=4)
+ def test_equivalent_quarter_and_semester_results_share_forecast_space(self):
+  quarter=self.data();quarter["academic_settings"][0].update(calendar_type="quarter",grading_scale="five_point",grade_min=2,grade_max=5)
+  quarter["academic_performance"][0].update(current_grade=4,recent_assessment_score=None,credits=None,workload_value=24,workload_unit="lessons")
+  semester=self.data();semester["academic_settings"][0].update(calendar_type="semester")
+  semester["academic_performance"][0].update(current_grade=74.5,recent_assessment_score=None,credits=None,workload_value=90,workload_unit="academic_hours")
+  self.assertEqual(forecast(quarter,1)["average_percent"],forecast(semester,1)["average_percent"])
+ def test_forecast_records_internal_model_manifest(self):
+  result=forecast(self.data(),1)
+  self.assertEqual(result["normalization_version"],"normalized-academic-v1")
+  self.assertEqual(result["model_manifest"][0]["key"],"academic-normalizer")
+  self.assertTrue(any(item["role"]=="personal" for item in result["model_manifest"]))
  def test_quarter_adaptive_forecast_uses_school_scale_and_lessons(self):
   d=self.data();d["academic_settings"][0].update(calendar_type="quarter",grading_scale="five_point",grade_min=2,grade_max=5)
   d["academic_performance"][0].update(current_grade=5,credits=None,workload_value=24,workload_unit="lessons")
@@ -67,6 +92,7 @@ class AcademicTests(unittest.TestCase):
    "academic_years":[{"year_id":1}],"grading_bands":[]}
 
 if __name__=="__main__":unittest.main()
+
 
 
 
