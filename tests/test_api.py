@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from app.academics import historical_projection, forecast
-from app.main import Calculation, Chat, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, split_explicit_requests, plan_all_requests, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, public_ai_response, admin_page, admin_assistant, app
+from app.main import Calculation, Chat, ChatTurn, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, split_explicit_requests, plan_all_requests, explicit_academic_change_intent, merge_chat_history, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, public_ai_response, admin_page, admin_assistant, app
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -43,6 +43,40 @@ class APITests(unittest.IsolatedAsyncioTestCase):
  async def test_admin_role(self):
   with self.assertRaises(HTTPException) as ctx:await administrator(STUDENT)
   self.assertEqual(ctx.exception.status_code,403)
+ async def test_operator_control_pauses_ai_before_reading_academic_data(self):
+  body=Chat(message="hello",locale="en",session_id=7)
+  with patch("app.main.rpc",AsyncMock(return_value={"control_mode":"operator"})) as rpc_mock,patch("app.main.all_data",AsyncMock()) as data_mock:
+   result=await chat(body,STUDENT)
+   self.assertEqual(result["status"],"operator_pending");data_mock.assert_not_awaited()
+   rpc_mock.assert_awaited_once_with("ai_chat_control_state",{"p_session_token":"test","p_session_id":7})
+ async def test_hybrid_chat_admin_ui_and_disclosure_are_present(self):
+  html=application_page()
+  for marker in ('data-view="admin_chats"','Перехватить управление','/admin/ai/chats','operator_pending'):
+   self.assertIn(marker,html)
+ async def test_operator_chat_polling_preserves_drafts_and_blocks_races(self):
+  html=application_page()
+  for marker in ("window.chatRequestInFlight","window.chatSyncInFlight","adminChatSignature","adminChatState.draft","window.adminChatSending","setSelectionRange"):
+   self.assertIn(marker,html)
+  self.assertIn("d.session?.control_mode==='operator'&&messages.at(-1)?.who==='user'",html)
+  self.assertIn("pending:true",html)
+  self.assertIn("function paintChatMessages()",html)
+  self.assertIn("optimistic:true",html)
+  self.assertIn("revision!==(window.chatRevision||0)",html)
+  self.assertIn("window.chatRequestInFlight||revision",html)
+ async def test_conversation_after_operator_is_not_a_data_change(self):
+  self.assertFalse(explicit_academic_change_intent("ты почему мне такое говоришь"))
+  self.assertFalse(explicit_academic_change_intent("это было странно, объясни"))
+  self.assertTrue(explicit_academic_change_intent("добавь математику с оценкой 5"))
+  self.assertTrue(explicit_academic_change_intent("Учебный год 2026-2027, 1 четверть: алгебра 5, физика 4"))
+ async def test_current_chat_history_is_sent_back_to_ai(self):
+  html=application_page()
+  self.assertIn("history=state.messages.slice(0,-2)",html)
+  self.assertIn("slice(-24)",html)
+  self.assertIn("session_id:state.currentChatId",html)
+ async def test_student_navigation_cannot_open_admin_views(self):
+  html=application_page()
+  self.assertIn("document.querySelectorAll('.admin-only').forEach",html)
+  self.assertIn("(v==='admin'||v==='admin_chats')&&state.me?.role!=='admin'",html)
  async def test_unsigned_account_is_blocked_from_academic_api(self):
   request=SimpleNamespace(url=SimpleNamespace(path="/data"));credentials=SimpleNamespace(credentials="session")
   with patch("app.main.rpc",AsyncMock(side_effect=[{"account_id":"a","role":"student"},{"required":True}])) as rpc:
@@ -136,6 +170,17 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(actions[0]["operation"],"answer");self.assertIn("5 кредитов",actions[0]["text"])
   self.assertEqual(deterministic_actions("5+5?",{},"ru")[0]["text"],"5 + 5 = 10")
   self.assertIn("Привет",deterministic_actions("Привет",{},"ru")[0]["text"])
+ async def test_keyboard_mash_does_not_reach_model_or_trigger_tools(self):
+  action=deterministic_actions("rtghtjuykuiop;",{},"ru")[0]
+  self.assertEqual(action["operation"],"answer");self.assertIn("понять",action["text"])
+ async def test_provider_cannot_invent_prediction_without_forecast_intent(self):
+  with patch("app.main.plan_actions",AsyncMock(return_value=[{"operation":"predict","level":"period"}])):
+   actions=await plan_all_requests("объясни это",{}, {},"ru",[])
+  self.assertEqual(actions[0]["operation"],"answer");self.assertIn("понять",actions[0]["text"])
+ async def test_explicit_forecast_intent_keeps_prediction_action(self):
+  with patch("app.main.plan_actions",AsyncMock(return_value=[{"operation":"predict","level":"next_period"}])):
+   actions=await plan_all_requests("Сделай прогноз",{}, {},"ru",[])
+  self.assertEqual(actions,[{"operation":"predict","level":"next_period"}])
  async def test_ai_reads_latest_completed_period_when_active_period_is_empty(self):
   data={"academic_periods":[{"period_id":1,"period_number":1,"status":"completed","settings_id":1},{"period_id":2,"period_number":2,"status":"active","settings_id":1}],"academic_settings":[{"settings_id":1,"calendar_type":"quarter"}],"academic_performance":[{"period_id":1,"course_id":1,"current_grade":5,"workload_unit":"lessons","workload_value":24}],"courses":[{"course_id":1,"course_name":"Алгебра"}]}
   answer=deterministic_actions("Покажи средний балл",data)[0]["text"]
@@ -159,6 +204,26 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   html=application_page()
   for marker in ("function formatForecastAI", "[[prediction:", "chat-prediction-link", "openPrediction('${prediction}')", "Я — искусственный интеллект проекта Perfecta"):
    self.assertIn(marker,html)
+  self.assertIn("function safeFormatAI",html)
+  self.assertIn("AI response formatting failed",html)
+  self.assertIn("AI error message was not persisted",html)
+ async def test_chat_accepts_longer_active_history_for_operator_continuity(self):
+  turns=[{"role":"assistant" if i%2 else "user","content":f"turn {i}"} for i in range(24)]
+  body=Chat(message="продолжай",history=turns)
+  self.assertEqual(len(body.history),24)
+  source=Path("app/main.py").read_text(encoding="utf-8")
+  self.assertIn('item.get("role") in ("user","assistant")',source)
+  self.assertNotIn('item.get("author_type")=="ai"',source)
+ async def test_active_chat_is_authoritative_and_operator_reply_is_remembered(self):
+  stored=[{"message_id":1,"role":"user","content":"старый чат"},{"message_id":10,"role":"assistant","content":"дубликат"}]
+  current={"messages":[{"message_id":10,"role":"assistant","content":"дубликат"},{"message_id":11,"role":"assistant","content":"Нет, мне лень"},{"message_id":12,"role":"user","content":"почему ты так написал?"}]}
+  merged=merge_chat_history(stored,current,[],"почему ты так написал?")
+  self.assertEqual([x.content for x in merged],["старый чат","дубликат","Нет, мне лень"])
+  self.assertEqual(merged[-1].role,"assistant")
+ async def test_client_history_is_fallback_when_active_session_cannot_load(self):
+  client=[ChatTurn(role="user",content="вопрос выше"),ChatTurn(role="assistant",content="предыдущий ответ")]
+  merged=merge_chat_history([],{},client,"что ты имел в виду?")
+  self.assertEqual([x.content for x in merged],["вопрос выше","предыдущий ответ"])
  async def test_public_ai_error_hides_technical_detail(self):
   response={"results":[{"index":0,"status":"failed","detail":"constraint 23514 secret internals"}]}
   public=public_ai_response(response,"ru")
@@ -174,6 +239,11 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(body.history[0].role,"assistant")
   html=application_page();self.assertIn("conversation_history",Path("app/main.py").read_text(encoding="utf-8"))
   self.assertIn("slice(0,-2)",html);self.assertIn("history,session_id:state.currentChatId",html)
+  self.assertIn("*safe_history",Path("app/main.py").read_text(encoding="utf-8"))
+ async def test_prompt_requires_contextual_followups_without_generic_refusal(self):
+  source=Path("app/main.py").read_text(encoding="utf-8")
+  for marker in ('Treat every assistant turn in conversation_history as your own previous reply','Never deny that a visible previous message exists','For harmless casual questions, answer normally'):
+   self.assertIn(marker,source)
  async def test_persistent_chat_ui_defaults_to_ai_and_has_sessions(self):
   html=application_page()
   self.assertIn("assistantMode:'ai'",html);self.assertIn("/ai/sessions",html)
@@ -231,6 +301,35 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   prepared=prepared_action(action,data)
   self.assertEqual(prepared["data"]["course_name"],"Математика")
   self.assertEqual(prepared["data"]["workload_unit"],"lessons");self.assertEqual(prepared["data"]["workload_value"],24)
+ async def test_copy_same_quarter_subjects_without_grades_is_atomic_and_safe(self):
+  data={"academic_periods":[{"period_id":11,"period_number":1,"status":"completed"},{"period_id":12,"period_number":2,"status":"active"}],"academic_performance":[{"performance_id":1,"period_id":11,"course_id":7,"current_grade":5,"workload_value":24,"workload_unit":"lessons"}],"courses":[{"course_id":7,"course_name":"Математика"}]}
+  action=deterministic_actions("Добавь за 2 четверть те же предметы, что и за 1 четверть, но без оценок",data)[0]
+  self.assertEqual(action["operation"],"copy_period_subjects")
+  prepared=prepared_action(action,data)
+  self.assertEqual(prepared["data"]["subjects"],[{"period_id":12,"course_name":"Математика","workload_value":24,"workload_unit":"lessons","credits":None,"entry_method":"ai_assisted"}])
+ async def test_copy_period_understands_ordinal_words_and_preserves_every_subject(self):
+  subjects=[{"performance_id":i,"period_id":11,"course_id":100+i,"current_grade":5,"workload_value":16+i,"workload_unit":"lessons"} for i in range(11)]
+  data={"academic_periods":[{"period_id":11,"period_number":1,"status":"completed"},{"period_id":12,"period_number":2,"status":"active"}],"academic_performance":subjects,"courses":[{"course_id":100+i,"course_name":f"Предмет {i+1}"} for i in range(11)]}
+  action=deterministic_actions("Запиши во вторую четверть всё те же предметы, что и за первую четверть, оценки оставь пустыми",data)[0]
+  prepared=prepared_action(action,data)
+  self.assertEqual(prepared["operation"],"copy_period_subjects");self.assertEqual(len(prepared["data"]["subjects"]),11);self.assertTrue(all("current_grade" not in item for item in prepared["data"]["subjects"]))
+ async def test_ai_can_execute_twelve_distinct_non_mutating_steps(self):
+  actions=[{"operation":"answer","text":str(i)} for i in range(12)]
+  with patch("app.main.all_data",AsyncMock(return_value={})):
+   result=await execute_actions(actions,STUDENT,True)
+  self.assertEqual(len(result["results"]),12);self.assertEqual(result["max_actions"],12)
+ async def test_copy_same_semester_subjects_keeps_hours_and_omits_grades(self):
+  data={"academic_periods":[{"period_id":21,"period_number":1,"year_id":4,"status":"completed"},{"period_id":22,"period_number":2,"year_id":4,"status":"active"}],"academic_performance":[{"period_id":21,"course_id":8,"current_grade":88,"workload_value":90,"workload_unit":"academic_hours"}],"courses":[{"course_id":8,"course_name":"Programming"}]}
+  action=deterministic_actions("Add the same subjects to semester 2 as in semester 1, no grades",data)[0]
+  prepared=prepared_action(action,data)
+  self.assertEqual(prepared["operation"],"copy_period_subjects");self.assertEqual(prepared["data"]["subjects"][0]["workload_unit"],"academic_hours");self.assertNotIn("current_grade",prepared["data"]["subjects"][0])
+ async def test_copy_period_executes_one_atomic_rpc_after_confirmation(self):
+  data={"academic_periods":[{"period_id":11,"period_number":1},{"period_id":12,"period_number":2}],"academic_performance":[{"period_id":11,"course_id":7,"current_grade":4,"workload_value":16,"workload_unit":"lessons"}],"courses":[{"course_id":7,"course_name":"Физика"}]}
+  action={"operation":"copy_period_subjects","data":{"source_period_id":11,"target_period_id":12,"include_grades":False}}
+  with patch("app.main.all_data",AsyncMock(return_value=data)),patch("app.main.rpc",AsyncMock(return_value={"count":1})) as rpc_mock:
+   result=await execute_actions([action],STUDENT,True)
+  self.assertEqual(result["results"][0]["status"],"ok");rpc_mock.assert_awaited_once()
+  self.assertEqual(rpc_mock.await_args.args[0],"create_subject_records_atomic")
  async def test_clarification_questions_are_deduplicated(self):
   actions=[{"operation":"clarify","questions":["Сколько уроков?","  сколько   уроков?!","Какая четверть?"],"draft":{"course_name":"Математика"}}]
   with patch("app.main.all_data",AsyncMock(return_value={"academic_periods":[{"period_id":1,"status":"active"}]})):
@@ -310,6 +409,14 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   html=application_page()
   for marker in ("const FORECAST_CONVERSION_LABEL=","function forecastConversion(","const FORECAST_UI=","function forecastLevelLabel(","function forecastMethodLabel(","function forecastSignalLabel(","Forecast horizon","Болжау көкжиегі","预测范围","Horizonte"):self.assertIn(marker,html)
   self.assertIn("coverageBits.join",html);self.assertNotIn("<b>Покрытие:</b> ${esc(JSON.stringify",html)
+ async def test_forecast_infrastructure_is_private_and_student_response_is_clean(self):
+  source=Path(__file__).parents[1].joinpath("app","main.py").read_text(encoding="utf-8")
+  migration=Path(__file__).parents[1].joinpath("database","forecasting-infrastructure.sql").read_text(encoding="utf-8")
+  self.assertIn('@app.get("/admin/forecast/infrastructure")',source)
+  self.assertIn('if k!="model_manifest"',source);self.assertIn('if k!="normalized_snapshot"',source)
+  for marker in ("private.forecast_feature_snapshots","private.forecast_snapshot_outcomes","private.forecast_model_registry","private.forecast_model_evaluations","private.forecast_ensemble_weights","private.forecast_training_rows"):
+   self.assertIn(marker,migration)
+  self.assertIn("enable row level security",migration)
  async def test_mobile_drawer_is_vertical_and_closable(self):
   html=application_page()
   for marker in ('class="mobile-sidebar-close"','.sidebar .nav{display:grid!important','overflow-y:auto!important','.sidebar .profile{display:flex!important'):self.assertIn(marker,html)
@@ -376,6 +483,7 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   self.assertIn("Background account loading failed",html)
   self.assertIn("new AbortController()",html)
 if __name__=="__main__":unittest.main()
+
 
 
 
