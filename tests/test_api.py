@@ -409,6 +409,14 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   html=application_page()
   for marker in ("const FORECAST_CONVERSION_LABEL=","function forecastConversion(","const FORECAST_UI=","function forecastLevelLabel(","function forecastMethodLabel(","function forecastSignalLabel(","Forecast horizon","Болжау көкжиегі","预测范围","Horizonte"):self.assertIn(marker,html)
   self.assertIn("coverageBits.join",html);self.assertNotIn("<b>Покрытие:</b> ${esc(JSON.stringify",html)
+ async def test_forecast_infrastructure_is_private_and_student_response_is_clean(self):
+  source=Path(__file__).parents[1].joinpath("app","main.py").read_text(encoding="utf-8")
+  migration=Path(__file__).parents[1].joinpath("database","forecasting-infrastructure.sql").read_text(encoding="utf-8")
+  self.assertIn('@app.get("/admin/forecast/infrastructure")',source)
+  self.assertIn('if k!="model_manifest"',source);self.assertIn('if k!="normalized_snapshot"',source)
+  for marker in ("private.forecast_feature_snapshots","private.forecast_snapshot_outcomes","private.forecast_model_registry","private.forecast_model_evaluations","private.forecast_ensemble_weights","private.forecast_training_rows"):
+   self.assertIn(marker,migration)
+  self.assertIn("enable row level security",migration)
  async def test_mobile_drawer_is_vertical_and_closable(self):
   html=application_page()
   for marker in ('class="mobile-sidebar-close"','.sidebar .nav{display:grid!important','overflow-y:auto!important','.sidebar .profile{display:flex!important'):self.assertIn(marker,html)

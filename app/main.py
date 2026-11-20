@@ -399,6 +399,10 @@ async def comparable_gpa(calendar:str|None=None,scale_id:int|None=None,me=Depend
         out.append({"calendar":key[0],"scale_name":f"{key[1]} {key[2]}–{key[3]}","grade_range":[key[2],key[3]],"student_count":len(members),"average_percent":round(sum(valid)/len(valid),2) if valid else None,"students":members})
     return {"comparable":True,"metric":"average_percent","groups":out}
 
+@app.get("/admin/forecast/infrastructure")
+async def forecast_infrastructure(me=Depends(administrator)):
+    return await rpc("api_forecast_infrastructure_status",{"p_token":me["token"]})
+
 @app.post("/admin/assistant")
 async def admin_assistant(body:Chat,me=Depends(administrator)):
     """Multilingual safe admin intents; raw SQL and private credential tables stay unavailable."""
@@ -501,7 +505,11 @@ async def predict(body:Prediction,me=Depends(identity)):
     except (ValueError,KeyError,TypeError) as e:raise HTTPException(422,str(e))
     if body.save:
         result["prediction_id"]=await rpc("api_save_prediction",{"p_token":me["token"],"p_result":result})
-    return result
+    # Persist technical provenance, but do not expose it in the student UI or
+    # assistant response. Students receive only useful forecast information.
+    public_result={k:v for k,v in result.items() if k!="model_manifest"}
+    public_result["subjects"]=[{k:v for k,v in item.items() if k!="normalized_snapshot"} for item in result.get("subjects",[])]
+    return public_result
 
 def cipher():
     key=os.getenv("AI_ENCRYPTION_KEY")

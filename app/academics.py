@@ -50,6 +50,43 @@ def school_grade_from_percent(value):
     if value>=40:return 3
     return 2
 
+def normalize_grade_percent(value, settings):
+    """Convert a configured grading scale to the shared 0..100 forecast space."""
+    if value is None:return None
+    numeric=float(value)
+    if settings.get("grading_scale")=="five_point" or settings.get("calendar_type")=="quarter":
+        converted=school_grade_percent(numeric)
+        return max(0.0,min(100.0,float(converted)))
+    lower=float(settings.get("grade_min",0));upper=float(settings.get("grade_max",100))
+    if not math.isfinite(numeric+lower+upper) or upper<=lower:raise ValueError("Numeric grading scale required")
+    return max(0.0,min(100.0,100*(numeric-lower)/(upper-lower)))
+
+def normalized_academic_snapshot(record, period, settings, captured_on=None):
+    """One small, model-neutral representation for quarters, trimesters and semesters."""
+    captured=captured_on or date.today()
+    if isinstance(captured,str):captured=date.fromisoformat(captured[:10])
+    progress=None
+    if period.get("start_date") and period.get("end_date"):
+        start=date.fromisoformat(str(period["start_date"])[:10]);end=date.fromisoformat(str(period["end_date"])[:10])
+        duration=(end-start).days
+        if duration>0:progress=max(0.0,min(100.0,100*(captured-start).days/duration))
+    total=record.get("assignments_total")
+    completion=None if not total else max(0.0,min(100.0,100*float(record.get("assignments_completed") or 0)/float(total)))
+    attendance=record.get("attendance")
+    attendance=None if attendance is None else max(0.0,min(100.0,float(attendance)))
+    workload=record.get("workload_value") if record.get("workload_value") is not None else record.get("credits")
+    unit=record.get("workload_unit") or ("credits" if record.get("credits") is not None else None)
+    workload_hours=float(workload)*30 if workload is not None and unit=="credits" else (float(workload) if workload is not None and unit=="academic_hours" else None)
+    return {
+        "schema_version":"normalized-academic-v1","calendar_type":settings.get("calendar_type") or "trimester",
+        "grading_scale":settings.get("grading_scale") or "percentage","period_progress_percent":None if progress is None else round(progress,4),
+        "current_score_percent":normalize_grade_percent(record.get("current_grade"),settings),
+        "recent_score_percent":normalize_grade_percent(record.get("recent_assessment_score"),settings),
+        "attendance_percent":attendance,"assignment_completion_percent":completion,
+        "workload_hours":workload_hours,"workload_value":workload,"workload_unit":unit,
+        "raw_current_grade":record.get("current_grade"),"raw_recent_assessment_score":record.get("recent_assessment_score")
+    }
+
 def calculate(items, bands=None, conversions=None):
     units={x.get("workload_unit","credits") for x in items}
     if len(units)>1 and (not conversions or any(u not in conversions for u in units)):
@@ -95,9 +132,9 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
     if float(settings["grade_max"]) <= float(settings["grade_min"]):
         raise ValueError("Numeric grading scale required")
     school_mode=settings.get("calendar_type")=="quarter" or settings.get("grading_scale")=="five_point"
-    # School marks are normalized to percentages before forecasting. Keep the
-    # forecast scale in the same 0–100 space instead of clamping 5 to 5%.
-    lo,hi=(0.0,100.0) if school_mode else (float(settings["grade_min"]),float(settings["grade_max"]))
+    # Every calendar and grading scale enters the forecast in one 0..100 space.
+    # Raw values remain attached to the subject for display and auditability.
+    lo,hi=0.0,100.0
     records=[x for x in data["academic_performance"] if x["period_id"]==period["period_id"]]
     if not records: raise ValueError("No academic records in this period")
     bands=[b for b in data.get("grading_bands",[]) if b["scale_id"]==settings.get("scale_id")]
@@ -106,10 +143,11 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
     for r in records:
         if r.get("current_grade") is None: continue
         raw_current=float(r["current_grade"])
-        current=school_grade_percent(raw_current) if school_mode else raw_current
+        snapshot=normalized_academic_snapshot(r,period,settings)
+        current=snapshot["current_score_percent"]
         # Conservative baseline: current performance with a small recent-assessment signal.
-        recent=r.get("recent_assessment_score")
-        baseline=current if recent is None else .8*current+.2*float(recent)
+        recent=snapshot["recent_score_percent"]
+        baseline=current if recent is None else .8*current+.2*recent
         estimate=max(lo,min(hi,baseline))
         # External outcomes only temper the personal estimate. They never replace
         # the user's own history and never relax year/program coverage rules.
@@ -164,7 +202,7 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
         if r.get("assignments_total") and (r.get("assignments_completed") or 0)<r["assignments_total"]:signals.append("There are unfinished assignments")
         subject_band=grade_band(estimate,bands) if not school_mode else None
         estimates.append({"performance_id":r["performance_id"],"course_id":r["course_id"],"grade":estimate,"converted_grade":school_grade_from_percent(estimate) if school_mode else (subject_band.get("letter_grade") if subject_band else None),"converted_points":None if school_mode or not subject_band else subject_band.get("grade_points"),"signals":signals,"reference_projection":reference_projection,
-                          "credits":r.get("credits"),"workload_value":r.get("workload_value") or r.get("credits"),"workload_unit":r.get("workload_unit") or "credits","current_grade":raw_current,"normalized_current_percent":current,"exams":exam})
+                          "credits":r.get("credits"),"workload_value":r.get("workload_value") or r.get("credits"),"workload_unit":r.get("workload_unit") or "credits","current_grade":raw_current,"normalized_current_percent":current,"normalized_snapshot":snapshot,"exams":exam})
     if not estimates: raise ValueError("Numeric current grades required")
     if not school_mode and any(x["workload_value"] is None for x in estimates):
         raise ValueError("Workload is required for every included subject")
@@ -191,9 +229,10 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
             if (s["grade_min"],s["grade_max"],s["scale_id"]) != (settings["grade_min"],settings["grade_max"],settings["scale_id"]):
                 raise ValueError("Historical scale differs; explicit conversion required")
             value=r.get("workload_value") or r.get("credits");unit=r.get("workload_unit") or "credits"
-            if school_mode:return {"grade":actual[r["performance_id"]]["final_grade"]}
+            normalized_final=normalize_grade_percent(actual[r["performance_id"]]["final_grade"],s)
+            if school_mode:return {"grade":normalized_final}
             if value is None: raise ValueError("Historical workload required")
-            return {"grade":actual[r["performance_id"]]["final_grade"],"workload_value":value,"workload_unit":unit}
+            return {"grade":normalized_final,"workload_value":value,"workload_unit":unit}
         selected += [historical_item(r) for r in completed_records]
         if level=="program":
             program=next(x for x in data["study_programs"] if x["program_id"]==year["program_id"])
@@ -227,8 +266,18 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
     adaptive_subjects=sum(any(str(signal).startswith("Adaptive data points:") for signal in item.get("signals",[])) for item in estimates)
     requested_method="adaptive-reference-v2" if method=="adaptive" else "baseline-reference-v2"
     effective_method="adaptive-reference-v2" if method=="adaptive" and adaptive_subjects else "baseline-reference-v2"
+    external_used=bool(reference and level in ("period","next_period"))
+    personal_key="adaptive-course" if effective_method=="adaptive-reference-v2" else "personal-baseline"
+    ensemble_key="adaptive-reference" if effective_method=="adaptive-reference-v2" else "baseline-reference"
+    model_manifest=[
+        {"key":"academic-normalizer","version":"v1","role":"preprocessing","weight":None},
+        {"key":personal_key,"version":"v1","role":"personal","weight":.75 if external_used else 1.0},
+        {"key":ensemble_key,"version":"v2","role":"orchestration","weight":None},
+    ]
+    if external_used:model_manifest.append({"key":"historical-projection","version":"v1","role":"external_reference","weight":.25})
     return {**output,"level":level,"period_id":target_period["period_id"],"source_period_id":period["period_id"],"subjects":estimates,"coverage":coverage,
             "method_version":requested_method,"effective_method_version":effective_method,"adaptive_subjects":adaptive_subjects,"is_illustrative":True,
+            "normalization_version":"normalized-academic-v1","model_manifest":model_manifest,
             "confidence":"low" if coverage.get("current_subjects",0)<3 or level=="period" else "medium",
             "reference_model":reference_model,
             "assumption":"Unobserved future work follows personal performance, conservatively tempered by anonymized historical outcomes",
