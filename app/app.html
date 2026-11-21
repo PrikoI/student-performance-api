@@ -110,12 +110,13 @@ async function sendAdminChatReply(){const id=adminChatState.selected?.session?.s
 <script src="/vendor/i18next.min.js"></script>
 <script>
 const SUPPORTED_LANGUAGES=new Set(['ru','kk','en','zh','es']);
+const LOCALE_ASSET_VERSION='2026-11-21-2';
 function detectDeviceLanguage(){const candidates=typeof navigator==='undefined'?[]:[...(navigator.languages||[]),navigator.language].filter(Boolean);for(const candidate of candidates){const primary=String(candidate).toLowerCase().split(/[-_]/)[0];if(SUPPORTED_LANGUAGES.has(primary))return primary}return'en'}
 let i18nReady=null;
 async function ensureI18n(language='en'){
  const lng=SUPPORTED_LANGUAGES.has(language)?language:'en';
  if(!globalThis.i18next)return false;
- if(!i18nReady){i18nReady=(async()=>{const resources={};await Promise.all([...SUPPORTED_LANGUAGES].map(async code=>{const response=await fetch(`/locales/${code}.json`);if(!response.ok)throw Error(`Locale ${code} failed`);resources[code]={translation:await response.json()}}));await i18next.init({lng,fallbackLng:'en',resources,returnEmptyString:false,interpolation:{escapeValue:false}});return true})().catch(error=>{console.error('Localization failed',error);return false})}
+ if(!i18nReady){i18nReady=(async()=>{const resources={};await Promise.all([...SUPPORTED_LANGUAGES].map(async code=>{const response=await fetch(`/locales/${code}.json?v=${LOCALE_ASSET_VERSION}`);if(!response.ok)throw Error(`Locale ${code} failed`);resources[code]={translation:await response.json()}}));await i18next.init({lng,fallbackLng:'en',resources,returnEmptyString:false,interpolation:{escapeValue:false}});return true})().catch(error=>{console.error('Localization failed',error);return false})}
  await i18nReady;if(i18next.language!==lng)await i18next.changeLanguage(lng);return true
 }
 function tr(key,options={}){return globalThis.i18next?.isInitialized?i18next.t(key,options):(options.defaultValue||key)}
