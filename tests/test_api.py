@@ -77,6 +77,8 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   html=application_page()
   self.assertIn("document.querySelectorAll('.admin-only').forEach",html)
   self.assertIn("(v==='admin'||v==='admin_chats')&&state.me?.role!=='admin'",html)
+  self.assertIn('.sidebar .nav button:not(.hidden){display:block!important',html)
+  self.assertIn('.sidebar .nav button.hidden{display:none!important}',html)
  async def test_unsigned_account_is_blocked_from_academic_api(self):
   request=SimpleNamespace(url=SimpleNamespace(path="/data"));credentials=SimpleNamespace(credentials="session")
   with patch("app.main.rpc",AsyncMock(side_effect=[{"account_id":"a","role":"student"},{"required":True}])) as rpc:
