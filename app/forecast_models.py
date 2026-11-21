@@ -8,6 +8,7 @@ import math
 from statistics import mean
 
 FEATURES=("current","momentum","attendance","completion","progress")
+_MODEL_CACHE={}
 
 def _number(value, fallback):
     try:
@@ -119,16 +120,30 @@ def _validation(rows,threshold):
 def multilevel_ml_prediction(snapshot,reference,threshold=60):
     rows=training_rows(reference)
     if len(rows)<40:return None
-    validation=_validation(rows,threshold)
+    # The reference cohort is identical for every subject in one forecast.
+    # Training per subject made an eight-course forecast perform the same
+    # expensive work eight times and regularly exceed the browser timeout.
+    # Keep a small content-addressed cache and only run inference per subject.
+    signature=(len(rows),round(sum(y for _,y in rows),4),round(sum(x[0] for x,_ in rows),4),float(threshold))
+    trained=_MODEL_CACHE.get(signature)
+    if trained is None:
+        validation=_validation(rows,threshold)
+        if not validation:return None
+        xs=[x for x,_ in rows];ys=[y for _,y in rows]
+        reg=GradientStumpRegressor().fit(xs,ys)
+        risk_labels=[1 if y<threshold else 0 for y in ys]
+        classifier=None
+        if 0<sum(risk_labels)<len(risk_labels):
+            classifier=GradientStumpClassifier().fit(xs,risk_labels)
+        trained=(validation,reg,classifier)
+        if len(_MODEL_CACHE)>=4:_MODEL_CACHE.clear()
+        _MODEL_CACHE[signature]=trained
+    validation,reg,classifier=trained
     if not validation:return None
     # An unhelpful validation result is recorded but receives no ensemble weight.
     useful=validation["mae"]<=validation["baseline_mae"]*1.05
-    xs=[x for x,_ in rows];ys=[y for _,y in rows];vector=feature_vector(snapshot)
-    reg=GradientStumpRegressor().fit(xs,ys)
-    risk_labels=[1 if y<threshold else 0 for y in ys]
-    risk=None
-    if 0<sum(risk_labels)<len(risk_labels):
-        risk=GradientStumpClassifier().fit(xs,risk_labels).predict_proba_one(vector)
+    vector=feature_vector(snapshot)
+    risk=None if classifier is None else classifier.predict_proba_one(vector)
     return {
         "grade":round(max(0,min(100,reg.predict_one(vector))),2),
         "risk_probability":None if risk is None else round(100*risk,1),
