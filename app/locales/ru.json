@@ -681,7 +681,7 @@
     "adaptiveUnavailable": "Адаптивный метод стаnone доступен после появления хотя бы одной оценённой работы."
   },
   "common": {
-    "version": "Версия"
+    "version": "Версия", "refresh": "Обновить", "loading": "Загрузка…", "send": "Отправить"
   },
   "assistantForecast": {
     "head": "Прогноз на следующий доступный период: {{average}}{{converted}}.",
@@ -690,5 +690,11 @@
     "opinionLow": "Моя оценка: прогноз указывает на учебный риск — лучше вмешаться уже сейчас.",
     "range": "Сильнейший ожидаемый результат: {{strongName}} — {{strongGrade}}. Зона внимания: {{weakName}} — {{weakGrade}}.",
     "advice": "Совет: в первую очередь разберите незавершённые работы и составьте короткий план улучшения по предмету «{{weakName}}»."
+  },
+  "adminChats": {
+    "title": "Чаты пользователей", "subtitle": "Просмотр обращений и временное подключение оператора.", "select": "Выберите чат пользователя.", "takeControl": "Перехватить управление", "returnToAi": "Вернуть управление ИИ", "operator": "Оператор", "reply": "Ответ пользователю", "aiActive": "Сейчас отвечает ИИ. Перехватите управление, чтобы написать ответ."
+  },
+  "uiPhrases": {
+    "The main result is average performance as a percentage, with a conversion to the selected profile scale.": "Основной результат — средняя успеваемость в процентах; рядом показывается перевод по шкале выбранного профиля.", "Calculation template": "Шаблон расчёта", "University — trimesters": "Университет — триместры", "University — semesters": "Университет — семестры", "School — quarters": "Школа — четверти", "Enter percentages from 0 to 100 or final grades from 2 to 5. Grades 2–5 are approximately converted to the middle of the school percentage ranges.": "Введите проценты 0–100 или итоговые оценки 2–5. Оценки 2–5 приблизительно переводятся в середины школьных процентных диапазонов.", "Enter results from 0 to 100. The average accounts for study workload and is also converted to a letter grade using the profile scale.": "Введите результаты 0–100. Среднее учитывает учебную нагрузку и дополнительно переводится в буквенную оценку по шкале профиля.", "All subjects have equal weight.": "Все предметы имеют равный вес.", "Enter the grade as a percentage and the weight in credits or academic hours.": "Введите оценку в процентах, а вес — в кредитах или академических часах.", "Enter data for the selected template.": "Заполните данные для выбранного шаблона.", "Percentage or grade 2–5": "Процент или оценка 2–5", "Study workload": "Учебная нагрузка"
   }
 }

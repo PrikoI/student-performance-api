@@ -681,7 +681,7 @@
     "adaptiveUnavailable": "Adaptive forecasting becomes available after at least one graded assignment."
   },
   "common": {
-    "version": "Version"
+    "version": "Version", "refresh": "Refresh", "loading": "Loading…", "send": "Send"
   },
   "assistantForecast": {
     "head": "Forecast for the next available period: {{average}}{{converted}}.",
@@ -690,5 +690,11 @@
     "opinionLow": "My assessment: the forecast indicates academic risk, so early action is advisable.",
     "range": "Strongest expected result: {{strongName}} — {{strongGrade}}. Main area to watch: {{weakName}} — {{weakGrade}}.",
     "advice": "Advice: address unfinished work first and make a short improvement plan for “{{weakName}}”."
+  },
+  "adminChats": {
+    "title": "User chats", "subtitle": "Review user conversations and temporarily connect an operator.", "select": "Select a user chat.", "takeControl": "Take control", "returnToAi": "Return control to AI", "operator": "Operator", "reply": "Reply to the user", "aiActive": "AI is currently responding. Take control to write a reply."
+  },
+  "uiPhrases": {
+    "The main result is average performance as a percentage, with a conversion to the selected profile scale.": "The main result is average performance as a percentage, with a conversion to the selected profile scale.", "Calculation template": "Calculation template", "University — trimesters": "University — trimesters", "University — semesters": "University — semesters", "School — quarters": "School — quarters", "Enter percentages from 0 to 100 or final grades from 2 to 5. Grades 2–5 are approximately converted to the middle of the school percentage ranges.": "Enter percentages from 0 to 100 or final grades from 2 to 5. Grades 2–5 are approximately converted to the middle of the school percentage ranges.", "Enter results from 0 to 100. The average accounts for study workload and is also converted to a letter grade using the profile scale.": "Enter results from 0 to 100. The average accounts for study workload and is also converted to a letter grade using the profile scale.", "All subjects have equal weight.": "All subjects have equal weight.", "Enter the grade as a percentage and the weight in credits or academic hours.": "Enter the grade as a percentage and the weight in credits or academic hours.", "Enter data for the selected template.": "Enter data for the selected template.", "Percentage or grade 2–5": "Percentage or grade 2–5", "Study workload": "Study workload"
   }
 }

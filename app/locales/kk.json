@@ -681,7 +681,7 @@
     "adaptiveUnavailable": "Бейімделетін болжам кемінде бір бағаланған жұмыс болғанда қолжетімді болады."
   },
   "common": {
-    "version": "Нұсқа"
+    "version": "Нұсқа", "refresh": "Жаңарту", "loading": "Жүктелуде…", "send": "Жіберу"
   },
   "assistantForecast": {
     "head": "Келесі қолжетімді кезең болжамы: {{average}}{{converted}}.",
@@ -690,5 +690,11 @@
     "opinionLow": "Менің бағалауым: болжам оқу тәуекелін көрсетеді, қазірден әрекет еткен дұрыс.",
     "range": "Ең жоғары күтілетін нәтиже: {{strongName}} — {{strongGrade}}. Назар аударатын пән: {{weakName}} — {{weakGrade}}.",
     "advice": "Кеңес: алдымен аяқталмаған жұмыстарды орындап, «{{weakName}}» пәніне қысқа жақсарту жоспарын құрыңыз."
+  },
+  "adminChats": {
+    "title": "Пайдаланушы чаттары", "subtitle": "Пайдаланушы өтініштерін қарау және операторды уақытша қосу.", "select": "Пайдаланушы чатын таңдаңыз.", "takeControl": "Басқаруды алу", "returnToAi": "Басқаруды ЖИ-ге қайтару", "operator": "Оператор", "reply": "Пайдаланушыға жауап", "aiActive": "Қазір ЖИ жауап беруде. Жауап жазу үшін басқаруды алыңыз."
+  },
+  "uiPhrases": {
+    "The main result is average performance as a percentage, with a conversion to the selected profile scale.": "Негізгі нәтиже — пайызбен берілген орташа үлгерім және таңдалған профиль шкаласына аударма.", "Calculation template": "Есептеу үлгісі", "University — trimesters": "Университет — триместрлер", "University — semesters": "Университет — семестрлер", "School — quarters": "Мектеп — тоқсандар", "Enter percentages from 0 to 100 or final grades from 2 to 5. Grades 2–5 are approximately converted to the middle of the school percentage ranges.": "0–100 пайызын немесе 2–5 қорытынды бағасын енгізіңіз. 2–5 бағалары мектеп пайыздық аралықтарының ортасына жуық аударылады.", "Enter results from 0 to 100. The average accounts for study workload and is also converted to a letter grade using the profile scale.": "0–100 нәтижелерін енгізіңіз. Орташа мән оқу жүктемесін ескеріп, профиль шкаласы бойынша әріптік бағаға аударылады.", "All subjects have equal weight.": "Барлық пәндердің салмағы бірдей.", "Enter the grade as a percentage and the weight in credits or academic hours.": "Бағаны пайызбен, салмақты кредитпен немесе академиялық сағатпен енгізіңіз.", "Enter data for the selected template.": "Таңдалған үлгі үшін деректерді енгізіңіз.", "Percentage or grade 2–5": "Пайыз немесе 2–5 бағасы", "Study workload": "Оқу жүктемесі"
   }
 }

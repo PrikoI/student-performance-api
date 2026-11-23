@@ -681,7 +681,7 @@
     "adaptiveUnavailable": "至少有一项已评分作业后才能使用自适应预测。"
   },
   "common": {
-    "version": "版本"
+    "version": "版本", "refresh": "刷新", "loading": "加载中…", "send": "发送"
   },
   "assistantForecast": {
     "head": "下一个可用学习阶段的预测：{{average}}{{converted}}。",
@@ -690,5 +690,11 @@
     "opinionLow": "我的判断：预测显示存在学习风险，建议现在就采取行动。",
     "range": "预计最强科目：{{strongName}} — {{strongGrade}}。重点关注：{{weakName}} — {{weakGrade}}。",
     "advice": "建议：优先完成未完成的作业，并为“{{weakName}}”制定简短的提升计划。"
+  },
+  "adminChats": {
+    "title": "用户聊天", "subtitle": "查看用户对话并临时接入人工操作员。", "select": "请选择用户聊天。", "takeControl": "接管", "returnToAi": "交还给 AI", "operator": "操作员", "reply": "回复用户", "aiActive": "当前由 AI 回复。接管后即可发送回复。"
+  },
+  "uiPhrases": {
+    "The main result is average performance as a percentage, with a conversion to the selected profile scale.": "主要结果为百分制平均成绩，并显示所选个人评分标准的换算结果。", "Calculation template": "计算模板", "University — trimesters": "大学 — 三学期制", "University — semesters": "大学 — 两学期制", "School — quarters": "学校 — 四学期制", "Enter percentages from 0 to 100 or final grades from 2 to 5. Grades 2–5 are approximately converted to the middle of the school percentage ranges.": "请输入 0–100 的百分制成绩或 2–5 的期末成绩。2–5 分会近似换算为学校百分区间的中间值。", "Enter results from 0 to 100. The average accounts for study workload and is also converted to a letter grade using the profile scale.": "请输入 0–100 的成绩。平均值会考虑学习负担，并按个人评分标准换算为字母等级。", "All subjects have equal weight.": "所有科目的权重相同。", "Enter the grade as a percentage and the weight in credits or academic hours.": "请输入百分制成绩，并用学分或学时填写权重。", "Enter data for the selected template.": "请填写所选模板的数据。", "Percentage or grade 2–5": "百分制或 2–5 分", "Study workload": "学习负担"
   }
 }
