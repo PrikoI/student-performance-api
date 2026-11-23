@@ -65,6 +65,9 @@ class LocalizationTests(unittest.TestCase):
         self.assertIn('<h1 id="authTitle">Sign in</h1>', APP_HTML)
         self.assertNotIn('<h1 id="authTitle">Вход</h1>', APP_HTML)
 
+    def test_locale_asset_version_was_bumped_with_locale_changes(self):
+        self.assertIn("const LOCALE_ASSET_VERSION='2026-11-23-1'", APP_HTML)
+
     def test_legacy_text_is_normalized_before_translation(self):
         self.assertIn("function normalizeUiText(value)", APP_HTML)
         self.assertIn("const normalized=normalizeUiText(value)", APP_HTML)
