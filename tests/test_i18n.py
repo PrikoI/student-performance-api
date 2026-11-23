@@ -65,6 +65,31 @@ class LocalizationTests(unittest.TestCase):
         self.assertIn('<h1 id="authTitle">Sign in</h1>', APP_HTML)
         self.assertNotIn('<h1 id="authTitle">Вход</h1>', APP_HTML)
 
+    def test_legacy_text_is_normalized_before_translation(self):
+        self.assertIn("function normalizeUiText(value)", APP_HTML)
+        self.assertIn("const normalized=normalizeUiText(value)", APP_HTML)
+        self.assertIn("defaultValue:normalizeUiText(button.textContent)", APP_HTML)
+
+    def test_language_cycle_has_a_translation_for_every_calculator_phrase(self):
+        english = LOCALES["en"]["uiPhrases"]
+        for language in LANGUAGES:
+            self.assertEqual(set(english), set(LOCALES[language]["uiPhrases"]), language)
+        for source_language in ("ru", "zh", "es"):
+            reverse = {value: key for key, value in LOCALES[source_language]["uiPhrases"].items()}
+            for english_text, source_text in LOCALES[source_language]["uiPhrases"].items():
+                self.assertEqual(english_text, reverse[source_text])
+                self.assertTrue(LOCALES["en"]["uiPhrases"][english_text])
+                self.assertTrue(LOCALES["zh"]["uiPhrases"][english_text])
+
+    def test_dynamic_user_content_is_not_machine_translated(self):
+        self.assertIn(".messages,.chat-session-list,.student-directory,.admin-student-details", APP_HTML)
+
+    def test_calculator_and_admin_chat_sources_are_english(self):
+        calculator = APP_HTML.split("function calculator(){", 1)[1].split("function addCalcRow", 1)[0]
+        admin_chats = APP_HTML.split("function adminChats(){", 1)[1].split("async function loadAdminChats", 1)[0]
+        self.assertIsNone(re.search(r"[А-Яа-яЁё]", calculator))
+        self.assertIsNone(re.search(r"[А-Яа-яЁё]", admin_chats))
+
 
 if __name__ == "__main__":
     unittest.main()

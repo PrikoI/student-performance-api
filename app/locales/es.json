@@ -681,7 +681,7 @@
     "adaptiveUnavailable": "El pronóstico adaptativo estará disponible después de al menos una tarea calificada."
   },
   "common": {
-    "version": "Versión"
+    "version": "Versión", "refresh": "Actualizar", "loading": "Cargando…", "send": "Enviar"
   },
   "assistantForecast": {
     "head": "Pronóstico para el siguiente periodo disponible: {{average}}{{converted}}.",
@@ -690,6 +690,12 @@
     "opinionLow": "Mi valoración: el pronóstico indica riesgo académico; conviene actuar desde ahora.",
     "range": "Mejor resultado esperado: {{strongName}} — {{strongGrade}}. Área principal de atención: {{weakName}} — {{weakGrade}}.",
     "advice": "Consejo: completa primero los trabajos pendientes y crea un plan breve para mejorar en «{{weakName}}»."
+  },
+  "adminChats": {
+    "title": "Chats de usuarios", "subtitle": "Revisa conversaciones y conecta temporalmente a un operador.", "select": "Selecciona un chat de usuario.", "takeControl": "Tomar el control", "returnToAi": "Devolver el control a la IA", "operator": "Operador", "reply": "Responder al usuario", "aiActive": "La IA está respondiendo. Toma el control para escribir una respuesta."
+  },
+  "uiPhrases": {
+    "The main result is average performance as a percentage, with a conversion to the selected profile scale.": "El resultado principal es el rendimiento medio en porcentaje, con la conversión a la escala del perfil seleccionado.", "Calculation template": "Plantilla de cálculo", "University — trimesters": "Universidad — trimestres", "University — semesters": "Universidad — semestres", "School — quarters": "Escuela — periodos trimestrales", "Enter percentages from 0 to 100 or final grades from 2 to 5. Grades 2–5 are approximately converted to the middle of the school percentage ranges.": "Introduce porcentajes de 0 a 100 o notas finales de 2 a 5. Las notas 2–5 se convierten aproximadamente al centro de los rangos porcentuales escolares.", "Enter results from 0 to 100. The average accounts for study workload and is also converted to a letter grade using the profile scale.": "Introduce resultados de 0 a 100. La media tiene en cuenta la carga académica y se convierte a una nota literal según la escala del perfil.", "All subjects have equal weight.": "Todas las asignaturas tienen el mismo peso.", "Enter the grade as a percentage and the weight in credits or academic hours.": "Introduce la nota en porcentaje y el peso en créditos u horas académicas.", "Enter data for the selected template.": "Introduce los datos de la plantilla seleccionada.", "Percentage or grade 2–5": "Porcentaje o nota 2–5", "Study workload": "Carga académica"
   }
 }
 
