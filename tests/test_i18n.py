@@ -66,7 +66,7 @@ class LocalizationTests(unittest.TestCase):
         self.assertNotIn('<h1 id="authTitle">Вход</h1>', APP_HTML)
 
     def test_locale_asset_version_was_bumped_with_locale_changes(self):
-        self.assertIn("const LOCALE_ASSET_VERSION='2026-11-23-1'", APP_HTML)
+        self.assertIn("const LOCALE_ASSET_VERSION='2026-11-24-1'", APP_HTML)
 
     def test_legacy_text_is_normalized_before_translation(self):
         self.assertIn("function normalizeUiText(value)", APP_HTML)
@@ -86,6 +86,11 @@ class LocalizationTests(unittest.TestCase):
 
     def test_dynamic_user_content_is_not_machine_translated(self):
         self.assertIn(".messages,.chat-session-list,.student-directory,.admin-student-details", APP_HTML)
+
+    def test_brand_tagline_stays_stable_across_language_cycles(self):
+        self.assertIn(".brand small,.dashboard-brand small", APP_HTML)
+        self.assertIn("element.textContent='Student Performance'", APP_HTML)
+        self.assertIn("element.closest('.brand,.dashboard-brand", APP_HTML)
 
     def test_calculator_and_admin_chat_sources_are_english(self):
         calculator = APP_HTML.split("function calculator(){", 1)[1].split("function addCalcRow", 1)[0]
