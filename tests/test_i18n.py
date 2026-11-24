@@ -66,7 +66,25 @@ class LocalizationTests(unittest.TestCase):
         self.assertNotIn('<h1 id="authTitle">Вход</h1>', APP_HTML)
 
     def test_locale_asset_version_was_bumped_with_locale_changes(self):
-        self.assertIn("const LOCALE_ASSET_VERSION='2026-11-24-1'", APP_HTML)
+        self.assertIn("const LOCALE_ASSET_VERSION='2026-11-24-2'", APP_HTML)
+
+    def test_academic_workspace_is_fully_externalized(self):
+        required = {
+            "subtitle", "year", "period", "overview", "gradebookHint",
+            "editCategories", "applyAll", "totalWeight", "structureHint",
+        }
+        for language, locale in LOCALES.items():
+            self.assertTrue(required <= locale["academicWorkspace"]["workspace"].keys(), language)
+            self.assertEqual(
+                set(LOCALES["en"]["academicWorkspace"]["categoryTypes"]),
+                set(locale["academicWorkspace"]["categoryTypes"]),
+                language,
+            )
+
+    def test_period_switch_does_not_change_language(self):
+        switch = re.search(r"function switchAcademicPeriod\(periodId\)\{(.+?)\}", APP_HTML)
+        self.assertIsNotNone(switch)
+        self.assertNotIn("language", switch.group(1))
 
     def test_legacy_text_is_normalized_before_translation(self):
         self.assertIn("function normalizeUiText(value)", APP_HTML)
