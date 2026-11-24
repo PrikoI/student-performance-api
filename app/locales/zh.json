@@ -695,6 +695,7 @@
     "title": "用户聊天", "subtitle": "查看用户对话并临时接入人工操作员。", "select": "请选择用户聊天。", "takeControl": "接管", "returnToAi": "交还给 AI", "operator": "操作员", "reply": "回复用户", "aiActive": "当前由 AI 回复。接管后即可发送回复。"
   },
   "uiPhrases": {
+    "Blue": "蓝色", "Purple": "紫色", "Violet": "紫罗兰色", "Pink": "粉色", "Red": "红色", "Orange": "橙色", "Yellow": "黄色", "Green": "绿色", "Teal": "青绿色", "Cyan": "青色",
     "The main result is average performance as a percentage, with a conversion to the selected profile scale.": "主要结果为百分制平均成绩，并显示所选个人评分标准的换算结果。", "Calculation template": "计算模板", "University — trimesters": "大学 — 三学期制", "University — semesters": "大学 — 两学期制", "School — quarters": "学校 — 四学期制", "Enter percentages from 0 to 100 or final grades from 2 to 5. Grades 2–5 are approximately converted to the middle of the school percentage ranges.": "请输入 0–100 的百分制成绩或 2–5 的期末成绩。2–5 分会近似换算为学校百分区间的中间值。", "Enter results from 0 to 100. The average accounts for study workload and is also converted to a letter grade using the profile scale.": "请输入 0–100 的成绩。平均值会考虑学习负担，并按个人评分标准换算为字母等级。", "All subjects have equal weight.": "所有科目的权重相同。", "Enter the grade as a percentage and the weight in credits or academic hours.": "请输入百分制成绩，并用学分或学时填写权重。", "Enter data for the selected template.": "请填写所选模板的数据。", "Percentage or grade 2–5": "百分制或 2–5 分", "Study workload": "学习负担"
   }
 }
