@@ -1,4 +1,5 @@
 {
+  "values": {"generic": {"none": "Sin configurar"}, "calendar": {"trimester": "Trimestres", "semester": "Semestres", "quarter": "Periodos trimestrales", "annual": "Sistema anual", "other": "Otro sistema"}, "status": {"planned": "Planificado", "active": "Actual", "completed": "Completado"}},
   "academics": {
     "title": "Datos académicos",
     "subtitle": "Añade asignaturas, notas y resultados sin identificadores de la base de datos.",

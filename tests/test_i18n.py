@@ -106,6 +106,14 @@ class LocalizationTests(unittest.TestCase):
         self.assertIn("if($('#studentDirectory'))renderAdminStudents()", APP_HTML)
         self.assertIn("const directory=$('#studentDirectory');if(directory)directory.innerHTML", APP_HTML)
 
+    def test_dashboard_localization_helpers_exist_and_use_locale_files(self):
+        self.assertIn("function localizedPeriodName(id)", APP_HTML)
+        self.assertIn("function localizedValue(value,group='generic')", APP_HTML)
+        for language, payload in LOCALES.items():
+            self.assertIn("values", payload, language)
+            self.assertIn("calendar", payload["values"], language)
+            self.assertIn("status", payload["values"], language)
+
     def test_calculator_and_admin_chat_sources_are_english(self):
         calculator = APP_HTML.split("function calculator(){", 1)[1].split("function addCalcRow", 1)[0]
         admin_chats = APP_HTML.split("function adminChats(){", 1)[1].split("async function loadAdminChats", 1)[0]

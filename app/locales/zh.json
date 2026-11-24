@@ -1,4 +1,5 @@
 {
+  "values": {"generic": {"none": "未设置"}, "calendar": {"trimester": "三学期制", "semester": "两学期制", "quarter": "四学期制", "annual": "学年制", "other": "其他制度"}, "status": {"planned": "已计划", "active": "当前", "completed": "已完成"}},
   "academics": {
     "title": "学业数据",
     "subtitle": "无需输入数据库编号即可添加课程、成绩和作业结果。",
