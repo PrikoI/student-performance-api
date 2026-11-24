@@ -361,6 +361,28 @@ async def create_subjects_batch(body:Record,me=Depends(identity)):
     if not isinstance(subjects,list) or not 1<=len(subjects)<=50:
         raise HTTPException(422,"Add between 1 and 50 subjects")
     return await rpc("create_subject_records_atomic",{"p_session_token":me["token"],"p_subjects":subjects})
+@app.post("/academic/periods/copy-subjects")
+async def copy_period_subjects(body:Record,me=Depends(identity)):
+    payload=body.data
+    source_id=payload.get("source_period_id");target_id=payload.get("target_period_id")
+    selected_ids={int(value) for value in payload.get("course_ids",[]) if str(value).isdigit()}
+    include_grades=bool(payload.get("include_grades",False))
+    data=await all_data(me)
+    periods={int(row["period_id"]) for row in data.get("academic_periods",[])}
+    if source_id not in periods or target_id not in periods or source_id==target_id:
+        raise HTTPException(422,"Choose two different study periods")
+    source=[row for row in data.get("academic_performance",[]) if row.get("period_id")==source_id and (not selected_ids or row.get("course_id") in selected_ids)]
+    names={row.get("course_id"):row.get("course_name") for row in data.get("courses",[])}
+    subjects=[]
+    for row in source:
+        value=row.get("workload_value",row.get("credits"));unit=row.get("workload_unit") or ("credits" if row.get("credits") is not None else None)
+        if not names.get(row.get("course_id")) or value is None or unit not in ("credits","academic_hours","lessons"):
+            raise HTTPException(422,"Every selected subject needs a valid workload before it can be copied")
+        item={"period_id":target_id,"course_name":names[row["course_id"]],"workload_value":value,"workload_unit":unit,"credits":value if unit=="credits" else None,"entry_method":"manual"}
+        if include_grades:item["current_grade"]=row.get("current_grade")
+        subjects.append(item)
+    if not subjects:raise HTTPException(422,"Select at least one subject to copy")
+    return await rpc("create_subject_records_atomic",{"p_session_token":me["token"],"p_subjects":subjects})
 @app.post("/academic/setup")
 async def setup_academics(body:AcademicSetup,me=Depends(identity)):
     return await rpc("setup_academic_program",{"p_session_token":me["token"],"p_data":body.model_dump(exclude_none=True)})
