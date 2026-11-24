@@ -92,6 +92,16 @@ class LocalizationTests(unittest.TestCase):
         self.assertIn("element.textContent='Student Performance'", APP_HTML)
         self.assertIn("element.closest('.brand,.dashboard-brand", APP_HTML)
 
+    def test_database_accepts_every_supported_interface_language(self):
+        migration = (ROOT / "database" / "support-all-interface-languages.sql").read_text(encoding="utf-8")
+        for language in ("en", "ru", "kk", "zh", "es"):
+            self.assertIn(f"'{language}'::text", migration)
+
+    def test_language_cache_is_scoped_to_the_current_account(self):
+        self.assertIn("`perfecta_language_${state.me.student_id}`", APP_HTML)
+        self.assertIn("localStorage.setItem(languageCacheKey(),v)", APP_HTML)
+        self.assertIn("const cachedLanguage=localStorage.getItem(languageCacheKey())", APP_HTML)
+
     def test_calculator_and_admin_chat_sources_are_english(self):
         calculator = APP_HTML.split("function calculator(){", 1)[1].split("function addCalcRow", 1)[0]
         admin_chats = APP_HTML.split("function adminChats(){", 1)[1].split("async function loadAdminChats", 1)[0]
