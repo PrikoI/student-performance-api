@@ -1,4 +1,5 @@
 {
+  "values": {"generic": {"none": "Not set"}, "calendar": {"trimester": "Trimester", "semester": "Semester", "quarter": "Quarter", "annual": "Annual", "other": "Other"}, "status": {"planned": "Planned", "active": "Active", "completed": "Completed"}},
   "academics": {
     "title": "Academic data",
     "subtitle": "Add subjects, grades and assessment results without database identifiers.",
