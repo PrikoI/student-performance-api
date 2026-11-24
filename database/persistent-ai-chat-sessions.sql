@@ -101,4 +101,3 @@ grant execute on function public.ai_chat_create(text,text),public.ai_chat_list(t
 revoke all on function public.ai_chat_memory(text,integer) from public;
 grant execute on function public.ai_chat_memory(text,integer) to anon,authenticated;
 
-
