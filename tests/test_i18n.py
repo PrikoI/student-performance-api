@@ -102,6 +102,10 @@ class LocalizationTests(unittest.TestCase):
         self.assertIn("localStorage.setItem(languageCacheKey(),v)", APP_HTML)
         self.assertIn("const cachedLanguage=localStorage.getItem(languageCacheKey())", APP_HTML)
 
+    def test_admin_student_loader_ignores_a_page_that_was_closed(self):
+        self.assertIn("if($('#studentDirectory'))renderAdminStudents()", APP_HTML)
+        self.assertIn("const directory=$('#studentDirectory');if(directory)directory.innerHTML", APP_HTML)
+
     def test_calculator_and_admin_chat_sources_are_english(self):
         calculator = APP_HTML.split("function calculator(){", 1)[1].split("function addCalcRow", 1)[0]
         admin_chats = APP_HTML.split("function adminChats(){", 1)[1].split("async function loadAdminChats", 1)[0]
