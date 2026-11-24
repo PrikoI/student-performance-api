@@ -346,6 +346,12 @@ async def batch(body:Batch,me=Depends(identity)):
 @app.post("/courses")
 async def course(body:Course,me=Depends(identity)):
     return {"course_id":await rpc("add_student_course",{"p_session_token":me["token"],"p_name":body.name})}
+@app.get("/courses/{course_id}/delete-info")
+async def course_delete_info(course_id:int,me=Depends(identity)):
+    return await rpc("course_delete_info",{"p_token":me["token"],"p_course_id":course_id})
+@app.delete("/courses/{course_id}")
+async def delete_course(course_id:int,me=Depends(identity)):
+    return await rpc("delete_owned_course",{"p_token":me["token"],"p_course_id":course_id})
 @app.post("/academic/subjects")
 async def create_subject(body:Record,me=Depends(identity)):
     return await rpc("create_subject_record",{"p_session_token":me["token"],"p_data":body.data})
