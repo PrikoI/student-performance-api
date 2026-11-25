@@ -238,9 +238,27 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
                     estimate=(1-blend)*estimate+blend*observed_score
         exam=[]
         for c in data.get("assessment_components",[]):
-            if c["performance_id"]==r["performance_id"] and c["component_type"] in ("midterm","final"):
-                exam.append({"component_id":c["component_id"],"name":c["name"],"estimated_grade":round(component_estimates.get(c["component_id"],estimate),2),
-                             "note":"Same baseline on course scale; not an independently validated exam model"})
+            if c["performance_id"]==r["performance_id"] and c["component_type"] in ("midterm","final","exam"):
+                own_works=[a for a in data.get("assessments",[]) if a["component_id"]==c["component_id"]]
+                own_results={x["assessment_id"]:x for x in data.get("assessment_results",[]) if x.get("status")=="graded" and x.get("score") is not None}
+                graded_count=sum(a["assessment_id"] in own_results for a in own_works)
+                own_score=component_estimates.get(c["component_id"])
+                other_scores=[(float(other["weight_percent"]),score) for other in components if other["component_id"]!=c["component_id"] if (score:=component_estimates.get(other["component_id"])) is not None]
+                other_mean=sum(weight*score for weight,score in other_scores)/sum(weight for weight,_ in other_scores) if other_scores and sum(weight for weight,_ in other_scores)>0 else None
+                if own_score is not None:
+                    evidence=min(.8,.25+.15*graded_count)
+                    exam_grade=own_score*evidence+estimate*(1-evidence)
+                    basis="graded_exam_work"
+                elif other_mean is not None:
+                    exam_grade=estimate+.2*(other_mean-current)
+                    basis="other_graded_work"
+                else:
+                    exam_grade=None
+                    basis="insufficient_data"
+                exam.append({"component_id":c["component_id"],"name":c["name"],
+                             "estimated_grade":None if exam_grade is None else round(max(lo,min(hi,exam_grade)),2),
+                             "basis":basis,"graded_works":graded_count,
+                             "note":"Indicative category estimate; no separately validated exam model" if exam_grade is not None else "Not enough assessed work for an exam estimate"})
         signals=list(adaptive_signals)
         if r.get("attendance") is not None and float(r["attendance"])<75:signals.append("Attendance below illustrative 75% threshold")
         if r.get("assignments_total") and (r.get("assignments_completed") or 0)<r["assignments_total"]:signals.append("There are unfinished assignments")
@@ -253,11 +271,11 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
                           "baseline_evidence":baseline_result["evidence"],
                           "credits":r.get("credits"),"workload_value":r.get("workload_value") or r.get("credits"),"workload_unit":r.get("workload_unit") or "credits","current_grade":raw_current,"normalized_current_percent":current,"normalized_snapshot":snapshot,"exams":exam})
     if not estimates: raise ValueError("Numeric current grades required")
-    if not school_mode and any(x["workload_value"] is None for x in estimates):
-        raise ValueError("Workload is required for every included subject")
-    if not school_mode and len({x["workload_unit"] for x in estimates})>1:raise ValueError("Different workload units require explicit conversion")
-    selected=[{"grade":x["grade"],"workload_value":1,"workload_unit":"lessons"} if school_mode else dict(grade=x["grade"],workload_value=x["workload_value"],workload_unit=x["workload_unit"]) for x in estimates]
-    coverage={"current_subjects":len(estimates)}
+    if not school_mode and len({x["workload_unit"] for x in estimates if x["workload_value"] is not None})>1:raise ValueError("Different workload units require explicit conversion")
+    fallback_unit=next((x["workload_unit"] for x in estimates if x["workload_value"] is not None),"credits")
+    missing_workload=sum(x["workload_value"] is None for x in estimates)
+    selected=[{"grade":x["grade"],"workload_value":1,"workload_unit":"lessons"} if school_mode else {"grade":x["grade"],"workload_value":x["workload_value"] if x["workload_value"] is not None else 1,"workload_unit":x["workload_unit"] if x["workload_value"] is not None else fallback_unit} for x in estimates]
+    coverage={"current_subjects":len(estimates),"subjects_without_workload":missing_workload}
     if level in ("year","program"):
         year=next(x for x in data["academic_years"] if x["year_id"]==period["year_id"])
         year_periods=[p for p in periods.values() if p["year_id"]==year["year_id"]]
@@ -334,7 +352,7 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
     return {**output,"level":level,"period_id":target_period["period_id"],"source_period_id":period["period_id"],"subjects":estimates,"coverage":coverage,
             "method_version":requested_method,"effective_method_version":effective_method,"adaptive_subjects":adaptive_subjects,"is_illustrative":True,
             "normalization_version":"normalized-academic-v1","model_manifest":model_manifest,
-            "confidence":"low" if coverage.get("current_subjects",0)<3 else ("medium" if not ml_subjects else "medium-high"),
+            "confidence":"low" if coverage.get("current_subjects",0)<3 or missing_workload else ("medium" if not ml_subjects else "medium-high"),
             "risk_summary":{"subjects_evaluated":len(risk_values),"average_probability":round(mean(risk_values),1) if risk_values else None,
                             "high_risk_subjects":sum(x.get("risk_level")=="high" for x in estimates)},
             "reference_model":reference_model,

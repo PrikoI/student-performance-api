@@ -42,7 +42,7 @@ async def guard(request:Request,call_next):
     body=await request.body()
     if len(body)>131072:return HTMLResponse("Request too large",413)
     response=await call_next(request)
-    asset_path=request.url.path in ("/logo.png","/calculator.js","/academic-results.js") or request.url.path.startswith("/vendor/") or request.url.path.startswith("/locales/")
+    asset_path=request.url.path in ("/logo.png","/calculator.js","/academic-results.js","/academic-entry.js") or request.url.path.startswith("/vendor/") or request.url.path.startswith("/locales/")
     response.headers["Cache-Control"]="public, max-age=604800, immutable" if asset_path else "no-store"
     response.headers["X-Content-Type-Options"]="nosniff"
     response.headers["Referrer-Policy"]="no-referrer"
@@ -200,6 +200,8 @@ def application_logo():return FileResponse(Path(__file__).with_name("logo.png"),
 def calculator_script():return FileResponse(Path(__file__).with_name("calculator.js"),media_type="text/javascript")
 @app.get("/academic-results.js",response_class=FileResponse)
 def academic_results_script():return FileResponse(Path(__file__).with_name("academic-results.js"),media_type="text/javascript")
+@app.get("/academic-entry.js",response_class=FileResponse)
+def academic_entry_script():return FileResponse(Path(__file__).with_name("academic-entry.js"),media_type="text/javascript")
 
 @app.get("/locales/{language}.json",response_class=FileResponse)
 def locale_resource(language:str):
@@ -353,6 +355,9 @@ async def course(body:Course,me=Depends(identity)):
 @app.get("/courses/{course_id}/delete-info")
 async def course_delete_info(course_id:int,me=Depends(identity)):
     return await rpc("course_delete_info",{"p_token":me["token"],"p_course_id":course_id})
+@app.patch("/courses/{course_id}")
+async def rename_course(course_id:int,body:Course,me=Depends(identity)):
+    return await rpc("rename_owned_course",{"p_token":me["token"],"p_course_id":course_id,"p_name":body.name})
 @app.delete("/courses/{course_id}")
 async def delete_course(course_id:int,me=Depends(identity)):
     return await rpc("delete_owned_course",{"p_token":me["token"],"p_course_id":course_id})

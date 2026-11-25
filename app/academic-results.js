@@ -1,5 +1,24 @@
 function resultText(key){return tr('academicResults.'+key,{defaultValue:key})}
 
+function attachLibrarySubjects(){
+  const period=selectedAcademicPeriod();if(!period)return;
+  const used=new Set(rows('academic_performance').filter(x=>x.period_id==period.period_id).map(x=>Number(x.course_id)));
+  const available=rows('courses').filter(x=>!used.has(Number(x.course_id)));
+  modal(tr('academicEntry.attachTitle',{defaultValue:'Add existing subjects'}),
+    available.length?`<p class="sub">${esc(tr('academicEntry.attachHint',{defaultValue:'Choose subjects for this period. You can add grades and attendance later.'}))}</p>${available.map(x=>`<label class="inline-check"><input class="attach-course" type="checkbox" value="${x.course_id}"><span data-user-text>${esc(courseLabel(x.course_id))}</span></label>`).join('')}<button class="btn wide" onclick="saveAttachedSubjects(${period.period_id})">${esc(tr('academics.actions.save'))}</button><div id="modalMsg" class="message"></div>`:`<p class="sub">${esc(tr('academicEntry.noAvailable',{defaultValue:'Every subject in your list is already in this period.'}))}</p>`);
+}
+
+async function saveAttachedSubjects(periodId){
+  const ids=[...document.querySelectorAll('.attach-course:checked')].map(x=>Number(x.value)),msg=$('#modalMsg'),button=$('#modal button.wide');
+  if(!ids.length){msg.textContent=tr('academicEntry.selectSubject',{defaultValue:'Choose a subject.'});return}
+  if(button)button.disabled=true;
+  try{
+    await api('/academic/subjects/batch','POST',{data:{subjects:ids.map(id=>({course_name:courseLabel(id),period_id:periodId,entry_method:'manual'}))}},60000);
+    closeModal();await refresh();window.academicTab='records';academics();
+  }catch(error){msg.textContent=friendlyAcademicError(error.message)}
+  finally{if(button?.isConnected)button.disabled=false}
+}
+
 function sortedAcademicResults(records){
   const mode=window.gradeSort||'desc';
   return records.slice().sort((a,b)=>{
@@ -33,7 +52,7 @@ function academicRecordsV3(){
   const period=selectedAcademicPeriod();
   const records=sortedAcademicResults(rows('academic_performance').filter(x=>x.period_id==period?.period_id));
   const options=[['desc','high'],['asc','low'],['name','name']].map(([value,key])=>`<option value="${value}" ${window.gradeSort===value?'selected':''}>${esc(resultText(key))}</option>`).join('');
-  const toolbar=`<div class="academic-results-toolbar"><span class="pill">${records.length} ${esc(resultText('count'))}</span><label>${esc(resultText('sort'))}<select class="input" onchange="window.gradeSort=this.value;academics()">${options}</select></label><button class="btn" onclick="subjectModal()">+ ${esc(resultText('add'))}</button><button class="btn secondary" onclick="bulkSubjectModal()">${esc(resultText('bulk'))}</button></div>`;
+  const toolbar=`<div class="academic-results-toolbar"><span class="pill">${records.length} ${esc(resultText('count'))}</span><label>${esc(resultText('sort'))}<select class="input" onchange="window.gradeSort=this.value;academics()">${options}</select></label><button class="btn secondary" onclick="attachLibrarySubjects()">${esc(tr('academicEntry.attachTitle',{defaultValue:'Add existing subjects'}))}</button><button class="btn" onclick="subjectModal()">+ ${esc(resultText('add'))}</button><button class="btn secondary" onclick="bulkSubjectModal()">${esc(resultText('bulk'))}</button></div>`;
   const rowsHtml=records.map(r=>{
     const grade=calculatedSubjectGrade(r.performance_id),value=grade.value??r.current_grade;
     const attendance=calculatedAttendance(r),unit=localizedValue(r.workload_unit||'credits');

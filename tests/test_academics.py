@@ -108,6 +108,19 @@ class AcademicTests(unittest.TestCase):
   for change in [{"status":"completed"},{"start_date":"2099-01-01"}]:
    d=self.data();d["academic_periods"][0].update(change)
    with self.assertRaises(ValueError):forecast(d,1)
+ def test_current_period_exam_is_optional_and_evidence_based(self):
+  d=self.data()
+  self.assertEqual(forecast(d,1,"period")["subjects"][0]["exams"],[])
+  d["assessment_components"]=[{"component_id":7,"performance_id":1,"name":"Мой экзамен","component_type":"exam","weight_percent":40}]
+  pending=forecast(d,1,"period")["subjects"][0]["exams"][0]
+  self.assertIsNone(pending["estimated_grade"])
+  self.assertEqual(pending["basis"],"insufficient_data")
+  d["assessments"]=[{"assessment_id":9,"component_id":7,"maximum_score":100}]
+  d["assessment_results"]=[{"assessment_id":9,"status":"graded","score":90}]
+  estimated=forecast(d,1,"period")["subjects"][0]["exams"][0]
+  self.assertEqual(estimated["graded_works"],1)
+  self.assertEqual(estimated["basis"],"graded_exam_work")
+  self.assertGreater(estimated["estimated_grade"],pending.get("estimated_grade") or 0)
  def test_gpa_gap_returns_none(self):
   self.assertIsNone(grade_points(70,[{"score_range":"[80,100]","grade_points":4}]))
  def data(self):
