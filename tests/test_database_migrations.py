@@ -45,6 +45,18 @@ class DatabaseMigrationTests(unittest.TestCase):
         self.assertIn("where template_id=tid and account_id=account.account_id", sql)
         self.assertIn("references public.accounts(account_id) on delete cascade", sql)
 
+    def test_template_rpc_wrappers_can_call_private_functions(self):
+        sql = (ROOT / "database" / "assessment-template-execute-grants.sql").read_text(encoding="utf-8")
+        for function in (
+            "assessment_template_list",
+            "assessment_template_save",
+            "assessment_template_delete",
+            "personal_assessment_template_list",
+            "personal_assessment_template_save",
+        ):
+            self.assertIn("private." + function, sql)
+        self.assertIn("to anon, authenticated", sql)
+
 
 if __name__ == "__main__":
     unittest.main()
