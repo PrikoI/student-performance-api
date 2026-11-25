@@ -64,6 +64,14 @@ class DatabaseMigrationTests(unittest.TestCase):
         self.assertIn("private.delete_owned_course", sql)
         self.assertNotIn("grant execute on function private", sql)
 
+    def test_shared_course_deletion_is_limited_to_students_own_records(self):
+        sql = (ROOT / "database" / "delete-shared-course-for-student.sql").read_text(encoding="utf-8")
+        self.assertIn("c.owner_student_id is null", sql)
+        self.assertIn("p.student_id=account.student_id", sql)
+        self.assertIn("Course not found for this student", sql)
+        original = (ROOT / "database" / "safe-course-deletion.sql").read_text(encoding="utf-8")
+        self.assertIn("delete from public.courses where course_id=p_course_id and owner_student_id=account.student_id", original)
+
     def test_next_year_is_scoped_and_creates_periods(self):
         sql = (ROOT / "database" / "add-next-academic-year.sql").read_text(encoding="utf-8")
         self.assertIn("program_id=p_program_id and student_id=account.student_id", sql)
