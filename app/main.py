@@ -1211,6 +1211,12 @@ def prepared_action(action,data,locale="ru"):
     elif op=="calculate":
         period=a.get("period_id")
         if period is not None and not owned_id(data,"academic_periods","period_id",period):a["period_id"]=current_period_id(data)
+    elif op=="clarify":
+        questions=a.get("questions")
+        if not isinstance(questions,list) or not questions or any(not isinstance(q,str) or not q.strip() for q in questions):
+            raise ValueError("Clarification needs at least one question")
+        a["questions"]=[q.strip()[:500] for q in questions[:12]]
+        a["draft"]=a.get("draft") if isinstance(a.get("draft"),dict) else {}
     elif op=="answer":a["text"]=str(a.get("text",""))[:6000]
     else:raise ValueError("Unsupported operation")
     return a
