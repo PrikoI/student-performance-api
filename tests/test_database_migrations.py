@@ -79,6 +79,12 @@ class DatabaseMigrationTests(unittest.TestCase):
         self.assertIn("status)", sql)
         self.assertIn("'planned'", sql)
 
+    def test_old_years_get_calendar_period_count(self):
+        sql = (ROOT / "database" / "backfill-planned-period-count.sql").read_text(encoding="utf-8")
+        self.assertIn("y.student_id=p.student_id", sql)
+        self.assertIn("y.planned_period_count is null", sql)
+        self.assertIn("when 'quarter' then 4 when 'semester' then 2 else 3", sql)
+
     def test_personal_template_delete_is_account_scoped(self):
         sql = (ROOT / "database" / "personal-assessment-template-delete.sql").read_text(encoding="utf-8")
         self.assertIn("template_id=p_template_id and account_id=account.account_id", sql)
