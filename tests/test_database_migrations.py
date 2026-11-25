@@ -39,6 +39,12 @@ class DatabaseMigrationTests(unittest.TestCase):
         ):
             self.assertIn(fragment, sql)
 
+    def test_personal_templates_are_scoped_to_account(self):
+        sql = (ROOT / "database" / "personal-assessment-category-templates.sql").read_text(encoding="utf-8")
+        self.assertIn("where t.account_id=account.account_id", sql)
+        self.assertIn("where template_id=tid and account_id=account.account_id", sql)
+        self.assertIn("references public.accounts(account_id) on delete cascade", sql)
+
 
 if __name__ == "__main__":
     unittest.main()
