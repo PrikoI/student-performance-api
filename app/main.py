@@ -386,6 +386,12 @@ async def copy_period_subjects(body:Record,me=Depends(identity)):
 @app.get("/academic/category-templates")
 async def category_templates(me=Depends(identity)):
     return await rpc("assessment_template_list",{"p_token":me["token"]})
+@app.get("/academic/personal-category-templates")
+async def personal_category_templates(me=Depends(identity)):
+    return await rpc("personal_assessment_template_list",{"p_token":me["token"]})
+@app.post("/academic/personal-category-templates")
+async def save_personal_category_template(body:Record,me=Depends(identity)):
+    return await rpc("personal_assessment_template_save",{"p_token":me["token"],"p_data":body.data})
 @app.post("/admin/academic/category-templates")
 async def save_category_template(body:Record,me=Depends(administrator)):
     return await rpc("assessment_template_save",{"p_token":me["token"],"p_data":body.data})
