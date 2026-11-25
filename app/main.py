@@ -42,7 +42,7 @@ async def guard(request:Request,call_next):
     body=await request.body()
     if len(body)>131072:return HTMLResponse("Request too large",413)
     response=await call_next(request)
-    asset_path=request.url.path=="/logo.png" or request.url.path.startswith("/vendor/") or request.url.path.startswith("/locales/")
+    asset_path=request.url.path in ("/logo.png","/calculator.js","/academic-results.js") or request.url.path.startswith("/vendor/") or request.url.path.startswith("/locales/")
     response.headers["Cache-Control"]="public, max-age=604800, immutable" if asset_path else "no-store"
     response.headers["X-Content-Type-Options"]="nosniff"
     response.headers["Referrer-Policy"]="no-referrer"
@@ -196,6 +196,10 @@ def application_page():return Path(__file__).with_name("app.html").read_text(enc
 def application_head():return HTMLResponse("")
 @app.get("/logo.png",response_class=FileResponse)
 def application_logo():return FileResponse(Path(__file__).with_name("logo.png"),media_type="image/png",headers={"Cache-Control":"public, max-age=604800, immutable"})
+@app.get("/calculator.js",response_class=FileResponse)
+def calculator_script():return FileResponse(Path(__file__).with_name("calculator.js"),media_type="text/javascript")
+@app.get("/academic-results.js",response_class=FileResponse)
+def academic_results_script():return FileResponse(Path(__file__).with_name("academic-results.js"),media_type="text/javascript")
 
 @app.get("/locales/{language}.json",response_class=FileResponse)
 def locale_resource(language:str):
@@ -352,6 +356,9 @@ async def course_delete_info(course_id:int,me=Depends(identity)):
 @app.delete("/courses/{course_id}")
 async def delete_course(course_id:int,me=Depends(identity)):
     return await rpc("delete_owned_course",{"p_token":me["token"],"p_course_id":course_id})
+@app.delete("/academic/records/{performance_id}")
+async def delete_academic_record(performance_id:int,me=Depends(identity)):
+    return await rpc("delete_academic_period_record",{"p_token":me["token"],"p_performance_id":performance_id})
 @app.post("/academic/subjects")
 async def create_subject(body:Record,me=Depends(identity)):
     return await rpc("create_subject_record",{"p_session_token":me["token"],"p_data":body.data})
@@ -386,6 +393,20 @@ async def copy_period_subjects(body:Record,me=Depends(identity)):
 @app.get("/academic/category-templates")
 async def category_templates(me=Depends(identity)):
     return await rpc("assessment_template_list",{"p_token":me["token"]})
+@app.post("/academic/categories/replace")
+async def replace_assessment_categories(body:Record,me=Depends(identity)):
+    data=body.data
+    try:
+        performance_id=int(data.get("performance_id"))
+    except (TypeError,ValueError):
+        raise HTTPException(422,"Choose a subject")
+    categories=data.get("categories")
+    if not isinstance(categories,list) or not 1<=len(categories)<=12:
+        raise HTTPException(422,"Add 1 to 12 categories")
+    return await rpc("replace_assessment_categories_batch",{
+        "p_token":me["token"],"p_performance_id":performance_id,
+        "p_categories":categories,"p_apply_all":data.get("apply_all") is True,
+    })
 @app.get("/academic/personal-category-templates")
 async def personal_category_templates(me=Depends(identity)):
     return await rpc("personal_assessment_template_list",{"p_token":me["token"]})
@@ -534,11 +555,19 @@ async def calculator(body:Calculation,me=Depends(identity)):
     school_grade_estimate=school_average and any(x.get("grade") is not None and 2<=float(x["grade"])<=5 for x in items)
     try:
         if body.mode=="attendance":
+            if any(x.get("lessons_held") is None or x.get("lessons_attended") is None or
+                   float(x["lessons_held"])<=0 or float(x["lessons_attended"])<0 or
+                   float(x.get("lessons_excused") or 0)<0 or
+                   float(x["lessons_attended"])+float(x.get("lessons_excused") or 0)>float(x["lessons_held"])
+                   for x in items):
+                raise ValueError("Every subject needs valid lesson counts")
             held=sum(float(x["lessons_held"]) for x in items if x.get("lessons_held") is not None)
             attended=sum(float(x["lessons_attended"]) for x in items if x.get("lessons_attended") is not None)
             excused=sum(float(x.get("lessons_excused") or 0) for x in items)
             if held<=0 or attended<0 or excused<0 or attended+excused>held:raise ValueError("Valid held, attended and excused lesson counts are required")
-            return {"calendar":body.calendar,"mode":body.mode,"attendance":round((attended+excused)/held*100,4),"physical_attendance":round(attended/held*100,4),"held":held,"attended":attended,"excused":excused,"saved":False}
+            subject_results=[{"attendance":round((float(x["lessons_attended"])+float(x.get("lessons_excused") or 0))/float(x["lessons_held"])*100,4),
+                              "physical_attendance":round(float(x["lessons_attended"])/float(x["lessons_held"])*100,4)} for x in items]
+            return {"calendar":body.calendar,"mode":body.mode,"attendance":round((attended+excused)/held*100,4),"physical_attendance":round(attended/held*100,4),"held":held,"attended":attended,"excused":excused,"subject_results":subject_results,"saved":False}
         if not items:raise ValueError("Add at least one complete row")
         if school_average:
             if any(x.get("grade") is None or not (2<=float(x["grade"])<=5 or 0<=float(x["grade"])<=100) for x in items):raise ValueError("Every row needs a school final grade from 2 to 5 or a percentage from 0 to 100")
@@ -553,7 +582,8 @@ async def calculator(body:Calculation,me=Depends(identity)):
         if school_average:result|={"gpa":None,"credits":None,"workload_total":None,"workload_unit":"subjects","weighting":"equal","estimated_from_final_grades":school_grade_estimate}
         if body.mode in ("gpa","course") and result["gpa"] is None:raise ValueError("A complete GPA scale is required")
         if body.mode=="course" and len(items)!=1:raise ValueError("Course mode accepts exactly one discipline")
-        return {"calendar":body.calendar,"mode":body.mode,**result,"saved":False}
+        subject_results=[{"percent":round(float(x["grade"]),4),"entered_grade":items[i]["grade"]} for i,x in enumerate(calculation_items)]
+        return {"calendar":body.calendar,"mode":body.mode,**result,"subject_results":subject_results,"saved":False}
     except (ValueError,KeyError,TypeError) as e:raise HTTPException(422,str(e))
 
 @app.post("/predict")

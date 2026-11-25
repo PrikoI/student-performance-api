@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from app.academics import historical_projection, forecast
-from app.main import Calculation, Chat, ChatTurn, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, split_explicit_requests, plan_all_requests, explicit_academic_change_intent, merge_chat_history, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, public_ai_response, admin_page, admin_assistant, app
+from app.main import Calculation, Record, Chat, ChatTurn, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, replace_assessment_categories, delete_academic_record, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, split_explicit_requests, plan_all_requests, explicit_academic_change_intent, merge_chat_history, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, public_ai_response, admin_page, admin_assistant, app
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
@@ -37,8 +37,9 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   html=application_page()
   for marker in ('FIGMA_ACCENTS','fillWithAI','confirmAIChanges','data-colorblind="true"','boot-brand-logo','/vendor/i18next.min.js'):
    self.assertIn(marker,html)
-  self.assertIn("window.calcScope='single'",html)
-  self.assertIn("window.calcScope='multiple'",html)
+  calculator_js=Path('app/calculator.js').read_text(encoding='utf-8')
+  self.assertIn("window.calcScope='single'",calculator_js)
+  self.assertIn("window.calcScope='multiple'",calculator_js)
  async def test_first_login_uses_supported_device_language_with_english_fallback(self):
   html=application_page()
   for marker in ('navigator.languages','SUPPORTED_LANGUAGES',"return'en'",'languageCacheKey()','detectDeviceLanguage()'):
@@ -152,6 +153,7 @@ class APITests(unittest.IsolatedAsyncioTestCase):
    self.assertEqual(ctx.exception.status_code,403);rpc.assert_not_awaited()
  async def test_manual_calculation(self):
   r=await calculator(Calculation(calendar="semester",mode="average",items=[{"grade":80,"credits":1},{"grade":100,"credits":3}]),STUDENT);self.assertEqual(r["average_percent"],95)
+  self.assertEqual([x["percent"] for x in r["subject_results"]],[80,100])
  async def test_school_template_returns_percent_and_converted_mark_without_workload(self):
   bands=[{"score_range":{"lower":0,"upper":40},"letter_grade":"2","grade_points":0},{"score_range":{"lower":40,"upper":65},"letter_grade":"3","grade_points":1},{"score_range":{"lower":65,"upper":85},"letter_grade":"4","grade_points":3},{"score_range":{"lower":85,"upper":101},"letter_grade":"5","grade_points":4}]
   r=await calculator(Calculation(calendar="quarter",mode="average",items=[{"grade":5},{"grade":4}],bands=bands),STUDENT)
@@ -173,6 +175,24 @@ class APITests(unittest.IsolatedAsyncioTestCase):
  async def test_attendance_counts_excused_lessons(self):
   r=await calculator(Calculation(calendar="trimester",mode="attendance",items=[{"lessons_held":10,"lessons_attended":7,"lessons_excused":2}]),STUDENT)
   self.assertEqual(r["attendance"],90);self.assertEqual(r["physical_attendance"],70);self.assertEqual(r["excused"],2)
+  self.assertEqual(r["subject_results"][0]["attendance"],90)
+ async def test_attendance_multiple_subjects_reports_each_result(self):
+  r=await calculator(Calculation(calendar="quarter",mode="attendance",items=[{"lessons_held":10,"lessons_attended":9},{"lessons_held":20,"lessons_attended":10,"lessons_excused":2}]),STUDENT)
+  self.assertEqual(r["attendance"],70)
+  self.assertEqual([x["attendance"] for x in r["subject_results"]],[90,60])
+  with self.assertRaises(HTTPException):
+   await calculator(Calculation(calendar="quarter",mode="attendance",items=[{"lessons_held":10,"lessons_attended":9},{"lessons_held":10}]),STUDENT)
+ async def test_category_batch_uses_single_owned_transaction(self):
+  categories=[{"name":"СОР","type":"section_summative","weight":50},{"name":"СОЧ","type":"quarter_summative","weight":50}]
+  with patch("app.main.rpc",AsyncMock(return_value={"updated_subjects":11})) as database_call:
+   result=await replace_assessment_categories(Record(data={"performance_id":42,"categories":categories,"apply_all":True}),STUDENT)
+   self.assertEqual(result["updated_subjects"],11)
+   database_call.assert_awaited_once_with("replace_assessment_categories_batch",{"p_token":"test","p_performance_id":42,"p_categories":categories,"p_apply_all":True})
+ async def test_delete_period_record_uses_dedicated_cascade(self):
+  with patch("app.main.rpc",AsyncMock(return_value={"deleted":True})) as database_call:
+   result=await delete_academic_record(42,STUDENT)
+   self.assertTrue(result["deleted"])
+   database_call.assert_awaited_once_with("delete_academic_period_record",{"p_token":"test","p_performance_id":42})
  async def test_common_ai_questions_do_not_depend_on_model_plan(self):
   data={"academic_periods":[{"period_id":1,"status":"active"}],"academic_performance":[{"period_id":1,"course_id":1,"credits":5,"current_grade":80}],"courses":[{"course_id":1,"course_name":"Math"}]}
   actions=deterministic_actions("Сколько у меня кредитов?",data)
@@ -499,7 +519,7 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   import inspect
   from app.main import guard
   source=inspect.getsource(guard)
-  self.assertIn('request.url.path=="/logo.png"',source)
+  self.assertIn('"/logo.png","/calculator.js","/academic-results.js"',source)
   self.assertIn('max-age=604800',source)
   self.assertIn('else "no-store"',source)
  async def test_bootstrap_opens_shell_before_slow_data_requests(self):

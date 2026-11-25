@@ -66,7 +66,7 @@ class LocalizationTests(unittest.TestCase):
         self.assertNotIn('<h1 id="authTitle">Вход</h1>', APP_HTML)
 
     def test_locale_asset_version_was_bumped_with_locale_changes(self):
-        self.assertIn("const LOCALE_ASSET_VERSION='2026-11-25-4'", APP_HTML)
+        self.assertIn("const LOCALE_ASSET_VERSION='2026-11-26-1'", APP_HTML)
 
     def test_academic_workspace_is_fully_externalized(self):
         required = {
@@ -133,7 +133,7 @@ class LocalizationTests(unittest.TestCase):
             self.assertIn("status", payload["values"], language)
 
     def test_calculator_and_admin_chat_sources_are_english(self):
-        calculator = APP_HTML.split("function calculator(){", 1)[1].split("function addCalcRow", 1)[0]
+        calculator = (ROOT / "app" / "calculator.js").read_text(encoding="utf-8")
         admin_chats = APP_HTML.split("function adminChats(){", 1)[1].split("async function loadAdminChats", 1)[0]
         self.assertIsNone(re.search(r"[А-Яа-яЁё]", calculator))
         self.assertIsNone(re.search(r"[А-Яа-яЁё]", admin_chats))
