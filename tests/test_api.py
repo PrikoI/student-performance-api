@@ -37,8 +37,8 @@ class APITests(unittest.IsolatedAsyncioTestCase):
   html=application_page()
   for marker in ('FIGMA_ACCENTS','fillWithAI','confirmAIChanges','data-colorblind="true"','boot-brand-logo','/vendor/i18next.min.js'):
    self.assertIn(marker,html)
-  self.assertIn('University — trimesters',html)
-  self.assertIn('School — quarters',html)
+  self.assertIn("window.calcScope='single'",html)
+  self.assertIn("window.calcScope='multiple'",html)
  async def test_first_login_uses_supported_device_language_with_english_fallback(self):
   html=application_page()
   for marker in ('navigator.languages','SUPPORTED_LANGUAGES',"return'en'",'languageCacheKey()','detectDeviceLanguage()'):

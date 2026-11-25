@@ -66,7 +66,7 @@ class LocalizationTests(unittest.TestCase):
         self.assertNotIn('<h1 id="authTitle">Вход</h1>', APP_HTML)
 
     def test_locale_asset_version_was_bumped_with_locale_changes(self):
-        self.assertIn("const LOCALE_ASSET_VERSION='2026-11-25-3'", APP_HTML)
+        self.assertIn("const LOCALE_ASSET_VERSION='2026-11-25-4'", APP_HTML)
 
     def test_academic_workspace_is_fully_externalized(self):
         required = {

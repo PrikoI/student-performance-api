@@ -1,4 +1,4 @@
--- Password operations for an already authenticated, non-demo account.
+-- Password operations for an authenticated account.
 create or replace function private.change_own_password(
   p_token text,
   p_current_password text,
@@ -20,7 +20,6 @@ begin
   for update;
 
   if credentials.account_id is null then raise exception 'Account credentials not found'; end if;
-  if coalesce(credentials.is_demo,false) then raise exception 'Demo account password cannot be changed'; end if;
   if credentials.password_hash <> extensions.crypt(p_current_password,credentials.password_hash) then
     raise exception 'Current password is incorrect';
   end if;

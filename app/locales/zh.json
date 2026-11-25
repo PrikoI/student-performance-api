@@ -1,4 +1,5 @@
 {
+  "calculatorV2": {"title":"学业计算器","subtitle":"计算所选学期的成绩或出勤率。","saved":"使用本学期数据","average":"学习成绩","attendance":"出勤率","scope":"计算范围","single":"一门课程","multiple":"多门课程","period":"所选学期","noPeriod":"未选择学期","subject":"课程","chooseSubject":"选择课程","grade":"成绩，%","schoolGrade":"百分比或2–5分","weight":"学习负荷","unit":"负荷单位","credits":"学分","hours":"学时","items":"参与计算的课程","add":"添加课程","calculate":"计算","calculating":"计算中…","result":"结果","empty":"输入数据后即可查看结果。","noSaved":"所选学期暂无课程。","noAttendance":"本学期尚无出勤数据。","held":"总课时","attended":"已出勤","excused":"准假缺勤","remove":"删除此行","singleHint":"输入一门课程的成绩，无需学习负荷。","multipleHint":"输入每门课程的成绩和学习负荷。","schoolHint":"学校课程权重相同，2–5分成绩会近似转换。","profileScale":"按个人评分标准","attendanceResult":"计入准假缺勤的出勤率","physical":"实际出勤","invalidGrade":"请输入0至100之间的成绩。","invalidWeight":"请输入正数学习负荷。","invalidAttendance":"请检查课时数量。","needRow":"请至少添加一门课程。","approximate":"百分比为近似值，由学校成绩转换而来。","saveFirst":"请先为本学期添加课程。"},
   "values": {"generic": {"none": "未设置"}, "calendar": {"trimester": "三学期制", "semester": "两学期制", "quarter": "四学期制", "annual": "学年制", "other": "其他制度"}, "status": {"planned": "已计划", "active": "当前", "completed": "已完成"}},
   "academics": {
     "title": "学业数据",
