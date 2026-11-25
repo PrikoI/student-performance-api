@@ -383,6 +383,15 @@ async def copy_period_subjects(body:Record,me=Depends(identity)):
         subjects.append(item)
     if not subjects:raise HTTPException(422,"Select at least one subject to copy")
     return await rpc("create_subject_records_atomic",{"p_session_token":me["token"],"p_subjects":subjects})
+@app.get("/academic/category-templates")
+async def category_templates(me=Depends(identity)):
+    return await rpc("assessment_template_list",{"p_token":me["token"]})
+@app.post("/admin/academic/category-templates")
+async def save_category_template(body:Record,me=Depends(administrator)):
+    return await rpc("assessment_template_save",{"p_token":me["token"],"p_data":body.data})
+@app.delete("/admin/academic/category-templates/{template_id}")
+async def delete_category_template(template_id:int,me=Depends(administrator)):
+    return {"deleted":await rpc("assessment_template_delete",{"p_token":me["token"],"p_template_id":template_id})}
 @app.post("/academic/setup")
 async def setup_academics(body:AcademicSetup,me=Depends(identity)):
     return await rpc("setup_academic_program",{"p_session_token":me["token"],"p_data":body.model_dump(exclude_none=True)})

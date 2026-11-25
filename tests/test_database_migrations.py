@@ -28,6 +28,17 @@ class DatabaseMigrationTests(unittest.TestCase):
         self.assertIn("security invoker", sql.lower())
         self.assertIn("revoke all on function private.course_delete_info", sql.lower())
 
+    def test_assessment_template_registry_is_validated_and_admin_managed(self):
+        sql = (ROOT / "database" / "assessment-category-template-registry.sql").read_text(encoding="utf-8")
+        for fragment in (
+            "private.valid_assessment_categories",
+            "abs((select coalesce(sum",
+            "account.role<>'admin'",
+            "is_system=false",
+            "public.assessment_template_list",
+        ):
+            self.assertIn(fragment, sql)
+
 
 if __name__ == "__main__":
     unittest.main()
