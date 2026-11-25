@@ -93,6 +93,15 @@ class AcademicTests(unittest.TestCase):
   d["assessment_results"]=[{"assessment_id":1,"status":"graded","score":90}]
   adaptive=forecast(d,1,method="adaptive");baseline=forecast(d,1,method="baseline")
   self.assertEqual(adaptive["effective_method_version"],"adaptive-reference-v2");self.assertEqual(adaptive["workload_unit"],"academic_hours");self.assertNotEqual(adaptive["average_percent"],baseline["average_percent"])
+ def test_complete_category_weights_do_not_erase_method_difference(self):
+  d=self.data()
+  d["assessment_components"]=[{"component_id":1,"performance_id":1,"name":"Work","component_type":"assignment","weight_percent":100}]
+  d["assessments"]=[{"assessment_id":1,"component_id":1,"maximum_score":100,"due_at":"2026-01-01"}]
+  d["assessment_results"]=[{"assessment_id":1,"status":"graded","score":90}]
+  baseline=forecast(d,1,method="baseline")
+  adaptive=forecast(d,1,method="adaptive")
+  self.assertNotEqual(baseline["average_percent"],adaptive["average_percent"])
+  self.assertEqual(adaptive["effective_method_version"],"adaptive-reference-v2")
  def test_year_requires_context(self):
   with self.assertRaises(ValueError):forecast(self.data(),1,"year")
  def test_future_and_closed_periods(self):

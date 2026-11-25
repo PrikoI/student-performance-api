@@ -57,6 +57,25 @@ class DatabaseMigrationTests(unittest.TestCase):
             self.assertIn("private." + function, sql)
         self.assertIn("to anon, authenticated", sql)
 
+    def test_course_deletion_wrapper_checks_owner_without_private_grant(self):
+        sql = (ROOT / "database" / "course-deletion-wrapper-security.sql").read_text(encoding="utf-8")
+        self.assertIn("security definer", sql)
+        self.assertIn("private.course_delete_info", sql)
+        self.assertIn("private.delete_owned_course", sql)
+        self.assertNotIn("grant execute on function private", sql)
+
+    def test_next_year_is_scoped_and_creates_periods(self):
+        sql = (ROOT / "database" / "add-next-academic-year.sql").read_text(encoding="utf-8")
+        self.assertIn("program_id=p_program_id and student_id=account.student_id", sql)
+        self.assertIn("for n in 1..period_count loop", sql)
+        self.assertIn("status)", sql)
+        self.assertIn("'planned'", sql)
+
+    def test_personal_template_delete_is_account_scoped(self):
+        sql = (ROOT / "database" / "personal-assessment-template-delete.sql").read_text(encoding="utf-8")
+        self.assertIn("template_id=p_template_id and account_id=account.account_id", sql)
+        self.assertIn("security definer", sql)
+
 
 if __name__ == "__main__":
     unittest.main()

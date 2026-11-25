@@ -214,7 +214,7 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
                 trend=late-early
                 completion=min(1,len(observations)/max(1,len(all_assessments)))
                 confidence=min(.75,.15+.12*len(observations))
-                estimate=(1-confidence)*baseline+confidence*observed_mean+.5*trend*(1-completion)
+                estimate=(1-confidence)*estimate+confidence*observed_mean+.5*trend*(1-completion)
                 estimate=max(lo,min(hi,estimate))
                 adaptive_signals=[f"Adaptive data points: {len(observations)}",f"Observed work: {round(completion*100)}%",f"Recent trend: {round(trend,2):+}"]
             else:
@@ -230,7 +230,12 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
         if components:
             total_weight=sum(float(c["weight_percent"]) for c in components)
             if total_weight>100.00001:raise ValueError("Assessment weights exceed 100 percent")
-            estimate=(sum(float(c["weight_percent"])*component_estimates.get(c["component_id"],estimate) for c in components)+(100-total_weight)*estimate)/100
+            if method=="adaptive" and component_estimates:
+                observed_weight=sum(float(c["weight_percent"]) for c in components if c["component_id"] in component_estimates)
+                if observed_weight>0:
+                    observed_score=sum(float(c["weight_percent"])*component_estimates[c["component_id"]] for c in components if c["component_id"] in component_estimates)/observed_weight
+                    blend=min(.35,observed_weight/100*.35)
+                    estimate=(1-blend)*estimate+blend*observed_score
         exam=[]
         for c in data.get("assessment_components",[]):
             if c["performance_id"]==r["performance_id"] and c["component_type"] in ("midterm","final"):

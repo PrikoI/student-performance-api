@@ -392,6 +392,9 @@ async def personal_category_templates(me=Depends(identity)):
 @app.post("/academic/personal-category-templates")
 async def save_personal_category_template(body:Record,me=Depends(identity)):
     return await rpc("personal_assessment_template_save",{"p_token":me["token"],"p_data":body.data})
+@app.delete("/academic/personal-category-templates/{template_id}")
+async def delete_personal_category_template(template_id:int,me=Depends(identity)):
+    return {"deleted":await rpc("personal_assessment_template_delete",{"p_token":me["token"],"p_template_id":template_id})}
 @app.post("/admin/academic/category-templates")
 async def save_category_template(body:Record,me=Depends(administrator)):
     return await rpc("assessment_template_save",{"p_token":me["token"],"p_data":body.data})
@@ -401,6 +404,9 @@ async def delete_category_template(template_id:int,me=Depends(administrator)):
 @app.post("/academic/setup")
 async def setup_academics(body:AcademicSetup,me=Depends(identity)):
     return await rpc("setup_academic_program",{"p_session_token":me["token"],"p_data":body.model_dump(exclude_none=True)})
+@app.post("/academic/programs/{program_id}/years")
+async def add_next_academic_year(program_id:int,me=Depends(identity)):
+    return await rpc("add_next_academic_year",{"p_token":me["token"],"p_program_id":program_id})
 @app.get("/admin/tables/{entity}")
 async def admin_read(entity:str,q:str="",student_id:int|None=None,offset:int=0,limit:int=50,me=Depends(administrator)):
     return await rpc("api_admin_search",{"p_token":me["token"],"p_entity":entity,"p_query":q[:200],"p_student_id":student_id,"p_offset":max(0,offset),"p_limit":min(100,max(1,limit))})
