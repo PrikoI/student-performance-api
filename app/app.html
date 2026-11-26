@@ -114,7 +114,7 @@ async function sendAdminChatReply(){const id=adminChatState.selected?.session?.s
 <script src="/vendor/i18next.min.js"></script>
 <script>
 const SUPPORTED_LANGUAGES=new Set(['ru','kk','en','zh','es']);
-const LOCALE_ASSET_VERSION='2026-11-26-1';
+const LOCALE_ASSET_VERSION='2026-11-26-2';
 function detectDeviceLanguage(){const candidates=typeof navigator==='undefined'?[]:[...(navigator.languages||[]),navigator.language].filter(Boolean);for(const candidate of candidates){const primary=String(candidate).toLowerCase().split(/[-_]/)[0];if(SUPPORTED_LANGUAGES.has(primary))return primary}return'en'}
 let i18nReady=null;
 async function ensureI18n(language='en'){

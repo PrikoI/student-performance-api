@@ -62,8 +62,8 @@ begin
         if not found then raise exception 'Category no longer belongs to this subject' using errcode='P0001'; end if;
       else
         insert into public.assessment_components
-          (component_id,student_id,performance_id,name,component_type,weight_percent)
-        values (nextval('public.assessment_components_component_id_seq'),account.student_id,target.performance_id,btrim(category->>'name'),
+          (student_id,performance_id,name,component_type,weight_percent)
+        values (account.student_id,target.performance_id,btrim(category->>'name'),
           category->>'type',(category->>'weight')::numeric);
       end if;
     end loop;

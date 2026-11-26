@@ -1,5 +1,15 @@
 // Keep the subject library and the selected period in one entry flow.
 const previousAcademicCoursesV2=academicCoursesV2;
+const previousAcademicGrading=academicGrading;
+academicGrading=function(){
+  const period=selectedAcademicPeriod();
+  const settings=rows('academic_settings').find(x=>x.settings_id==period?.settings_id);
+  if(settings?.calendar_type!=='quarter'&&settings?.grading_scale!=='five_point')return previousAcademicGrading();
+  const scale=rows('grading_scales').find(x=>x.scale_id==settings.scale_id);
+  const bands=rows('grading_bands').filter(x=>x.scale_id==settings.scale_id);
+  return `<div class="academic-intro card"><div><h2>${esc(tr('academicEntry.schoolScaleTitle',{defaultValue:'Your grading scale'}))}</h2><p class="sub">${esc(tr('academicEntry.schoolScaleHint',{defaultValue:'This scale is used to show your grades and forecasts.'}))}</p></div></div>`+
+    `<div class="card grading-scale-card"><h3>${esc(scale?.name||tr('academicEntry.schoolScaleTitle',{defaultValue:'Your grading scale'}))}</h3><div class="grade-band-list">${bands.map(band=>`<div class="grade-band"><span>${esc(formatScoreRange(band.score_range))}</span><b>${esc(band.letter_grade)}</b></div>`).join('')}</div></div>`;
+};
 academicCoursesV2=function(){
   return previousAcademicCoursesV2().replaceAll('entityModal("courses",','courseModal(');
 };
