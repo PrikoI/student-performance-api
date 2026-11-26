@@ -639,6 +639,7 @@
   "forecastDetails": {
     "guarantee": "This forecast is an estimate, not a guaranteed result.",
     "confidence": "Confidence",
+    "medium-high": "medium to high",
     "low": "low",
     "medium": "medium",
     "high": "high",

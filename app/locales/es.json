@@ -639,6 +639,7 @@
   "forecastDetails": {
     "guarantee": "Este pronóstico es orientativo y no garantiza el resultado final.",
     "confidence": "Confianza",
+    "medium-high": "media o alta",
     "low": "baja",
     "medium": "media",
     "high": "alta",

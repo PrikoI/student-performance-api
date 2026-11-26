@@ -8,6 +8,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class AssessmentHierarchyTests(unittest.TestCase):
+    def test_dashboard_average_uses_the_same_computed_grades_as_results(self):
+        import re
+        html=(ROOT / "app" / "app.html").read_text(encoding="utf-8")
+        source=re.search(r"function weighted\(rs\)\{[^\n]+",html).group(0)
+        script=f"""
+const calculatedSubjectGrade=id=>({{1:{{value:90}},2:{{value:80}}}}[id]||{{value:null}});
+const rows=name=>name==='academic_settings'?[{{settings_id:1,calendar_type:'trimester'}}]:[];
+const displayPeriod=()=>({{settings_id:1}});
+const schoolPercent=x=>x*20;
+{source}
+process.stdout.write(String(weighted([
+  {{performance_id:1,current_grade:40,credits:5}},
+  {{performance_id:2,current_grade:50,credits:2}}
+])));
+"""
+        result=subprocess.run(["node","-e",script],capture_output=True,text=True,check=True)
+        self.assertAlmostEqual(float(result.stdout),(90*5+80*2)/7)
+
     def test_intermediate_result_marks_incomplete_branches(self):
         script=r"""
 const fs=require('fs'),vm=require('vm');
