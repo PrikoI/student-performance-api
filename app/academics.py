@@ -143,6 +143,30 @@ def historical_projection(current_percent, reference):
     analog=mean(float(x["final"]) for x in nearest)
     return {"estimate":round(.6*estimate+.4*analog,2),"sample_count":len(samples),"analog_count":len(nearest)}
 
+def observed_assessment_percent(data, performance_id):
+    components=[c for c in data.get("assessment_components",[]) if c["performance_id"]==performance_id]
+    by_parent={}
+    for c in components:by_parent.setdefault(c.get("parent_component_id"),[]).append(c)
+    results={r["assessment_id"]:r for r in data.get("assessment_results",[])
+             if r.get("status")=="graded" and r.get("score") is not None}
+    works={}
+    for a in data.get("assessments",[]):works.setdefault(a["component_id"],[]).append(a)
+    def score(parent,seen):
+        weighted=covered=0.0
+        for child in by_parent.get(parent,[]):
+            cid=child["component_id"]
+            if cid in seen:continue
+            if by_parent.get(cid):value=score(cid,seen|{cid})
+            else:
+                graded=[a for a in works.get(cid,[]) if a["assessment_id"] in results and float(a["maximum_score"])>0]
+                maximum=sum(float(a["maximum_score"]) for a in graded)
+                value=sum(float(results[a["assessment_id"]]["score"]) for a in graded)/maximum*100 if maximum else None
+            if value is not None:
+                weight=float(child["weight_percent"])
+                weighted+=weight*value;covered+=weight
+        return weighted/covered if covered else None
+    return score(None,set())
+
 def forecast(data, period_id, level="period", method="baseline", reference=None):
     if method not in ("baseline","adaptive"): raise ValueError("Unknown forecast method")
     periods={x["period_id"]:x for x in data["academic_periods"]}
@@ -170,10 +194,13 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
     settings_by_id={x["settings_id"]:x for x in data["academic_settings"]}
     estimates=[]
     for r in records:
-        if r.get("current_grade") is None: continue
-        raw_current=float(r["current_grade"])
+        observed=observed_assessment_percent(data,r["performance_id"])
+        if r.get("current_grade") is None and observed is None: continue
+        raw_current=(school_grade_from_percent(observed) if school_mode else observed) if observed is not None else float(r["current_grade"])
         snapshot=normalized_academic_snapshot(r,period,settings)
-        current=snapshot["current_score_percent"]
+        current=observed if observed is not None else snapshot["current_score_percent"]
+        snapshot["current_score_percent"]=current
+        snapshot["raw_current_grade"]=raw_current
         prior=[]
         for old in data["academic_performance"]:
             if old.get("course_id")!=r.get("course_id") or old.get("performance_id")==r.get("performance_id"):continue
@@ -256,11 +283,19 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
         exam=[]
         for c in data.get("assessment_components",[]):
             if c["performance_id"]==r["performance_id"] and c["component_type"] in ("midterm","final","exam"):
-                own_works=[a for a in data.get("assessments",[]) if a["component_id"]==c["component_id"]]
+                descendant_ids=set()
+                pending=[c["component_id"]]
+                while pending:
+                    cid=pending.pop()
+                    if cid in descendant_ids:continue
+                    descendant_ids.add(cid)
+                    pending.extend(child["component_id"] for child in by_parent.get(cid,[]))
+                own_works=[a for a in data.get("assessments",[]) if a["component_id"] in descendant_ids]
                 own_results={x["assessment_id"]:x for x in data.get("assessment_results",[]) if x.get("status")=="graded" and x.get("score") is not None}
                 graded_count=sum(a["assessment_id"] in own_results for a in own_works)
                 own_score=component_estimates.get(c["component_id"])
-                other_scores=[(float(other["weight_percent"]),score) for other in roots if other["component_id"]!=c["component_id"] if (score:=component_estimates.get(other["component_id"])) is not None]
+                siblings=by_parent.get(c.get("parent_component_id"),[])
+                other_scores=[(float(other["weight_percent"]),score) for other in siblings if other["component_id"]!=c["component_id"] if (score:=component_estimates.get(other["component_id"])) is not None]
                 other_mean=sum(weight*score for weight,score in other_scores)/sum(weight for weight,_ in other_scores) if other_scores and sum(weight for weight,_ in other_scores)>0 else None
                 if own_score is not None:
                     evidence=min(.8,.25+.15*graded_count)

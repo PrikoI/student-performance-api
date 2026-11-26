@@ -41,7 +41,7 @@ function selectCalcSavedSubject(value){
     row.querySelector('.cHeld').value=record.lessons_held??'';
     row.querySelector('.cAttended').value=record.lessons_attended??'';
     row.querySelector('.cExcused').value=record.lessons_excused??'';
-  }else row.querySelector('.cGrade').value=record.current_grade??'';
+  }else row.querySelector('.cGrade').value=calculatedSubjectGrade(record.performance_id).value??record.current_grade??'';
 }
 
 function loadSavedCalc(){
@@ -56,10 +56,11 @@ function loadSavedCalc(){
     return;
   }
   const attendance=window.calcMode==='attendance';
-  const selected=all.filter(x=>attendance?Number(x.lessons_held)>0&&x.lessons_attended!=null:x.current_grade!=null);
+  const gradeOf=x=>calculatedSubjectGrade(x.performance_id).value??x.current_grade;
+  const selected=all.filter(x=>attendance?Number(x.lessons_held)>0&&x.lessons_attended!=null:gradeOf(x)!=null);
   if(!selected.length){msg.textContent=calcText(attendance?'noAttendance':'noGrades');return}
   $('#calcRows').innerHTML='';
-  for(const x of selected)addCalcRow({name:courseLabel(x.course_id),grade:x.current_grade,workload:x.workload_value??x.credits,held:x.lessons_held,attended:x.lessons_attended,excused:x.lessons_excused});
+  for(const x of selected)addCalcRow({name:courseLabel(x.course_id),grade:gradeOf(x),workload:x.workload_value??x.credits,held:x.lessons_held,attended:x.lessons_attended,excused:x.lessons_excused});
   if(selected.length<all.length)msg.textContent=calcText('skippedIncomplete').replace('{{count}}',all.length-selected.length);
 }
 

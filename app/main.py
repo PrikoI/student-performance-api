@@ -108,6 +108,9 @@ class AgreementAccept(Strict):
     version:str=Field(max_length=30)
 class Record(Strict):
     data:dict[str,Any]
+class WorkCreate(Record):
+    request_key:str=Field(min_length=36,max_length=36)
+    auto_title:bool=False
 class BatchItem(Strict):
     entity:str
     data:dict[str,Any]
@@ -335,6 +338,10 @@ async def save(entity:str,body:Record,me=Depends(identity)):
     if entity in ("students","user_preferences","grading_bands","courses"):
         return await rpc("api_save_extra",{"p_token":me["token"],"p_entity":entity,"p_data":body.data})
     return await rpc("save_student_record",{"p_session_token":me["token"],"p_entity":entity,"p_data":body.data})
+@app.post("/academic/works")
+async def create_work(body:WorkCreate,me=Depends(identity)):
+    return await rpc("api_create_work",{"p_token":me["token"],"p_request_key":body.request_key,
+                                        "p_data":body.data,"p_auto_title":body.auto_title})
 @app.patch("/tables/{entity}/{record_id}")
 async def update(entity:str,record_id:int,body:Record,me=Depends(identity)):
     if entity in ("grading_bands","courses"):
@@ -348,6 +355,13 @@ async def update(entity:str,record_id:int,body:Record,me=Depends(identity)):
 async def delete(entity:str,record_id:int,confirm:bool=False,me=Depends(identity)):
     if not confirm:raise HTTPException(409,"Pass confirm=true to delete")
     return await rpc("api_delete",{"p_token":me["token"],"p_entity":entity,"p_id":record_id})
+@app.delete("/academic/works/{assessment_id}")
+async def delete_work(assessment_id:int,me=Depends(identity)):
+    return await rpc("api_delete_work",{"p_token":me["token"],"p_assessment_id":assessment_id})
+@app.put("/academic/works/{assessment_id}/grade")
+async def save_work_grade(assessment_id:int,body:Record,me=Depends(identity)):
+    return await rpc("api_save_work_grade",{"p_token":me["token"],"p_assessment_id":assessment_id,
+                                            "p_score":body.data.get("score")})
 @app.post("/records/batch")
 async def batch(body:Batch,me=Depends(identity)):
     return await rpc("save_student_records",{"p_session_token":me["token"],"p_records":[r.model_dump() for r in body.records]})

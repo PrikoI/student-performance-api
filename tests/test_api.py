@@ -5,12 +5,22 @@ from unittest.mock import AsyncMock, patch
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from app.academics import historical_projection, forecast
-from app.main import Calculation, Record, Chat, ChatTurn, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, replace_assessment_categories, delete_academic_record, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, split_explicit_requests, plan_all_requests, explicit_academic_change_intent, merge_chat_history, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, public_ai_response, admin_page, admin_assistant, app
+from app.main import Calculation, Record, WorkCreate, create_work, save_work_grade, delete_work, Chat, ChatTurn, ExecutePlan, RegistrationStart, CurrentPassword, PasswordChange, Delete, administrator, identity, application_page, application_logo, calculator, replace_assessment_categories, delete_academic_record, chat, execute_plan, limits, used_plans, parse_ai_plan, prepared_action, execute_actions, deterministic_actions, split_explicit_requests, plan_all_requests, explicit_academic_change_intent, merge_chat_history, register_start, verify_account_password, change_account_password, delete_account, get_avatar, put_avatar, delete_avatar, Avatar, ai_scoped_context, redact_ai_log_text, redact_ai_log_value, public_ai_response, admin_page, admin_assistant, app
 
 STUDENT={"token":"test","account_id":"a","student_id":1,"role":"student"}
 
 class APITests(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):limits.clear();used_plans.clear();os.environ["AI_ENCRYPTION_KEY"]=Fernet.generate_key().decode()
+ async def test_work_requests_keep_retry_key_and_use_atomic_grade_write(self):
+  key="11111111-1111-4111-8111-111111111111"
+  body=WorkCreate(data={"component_id":4,"title":"Assignment 1","maximum_score":100},request_key=key,auto_title=True)
+  with patch("app.main.rpc",AsyncMock(side_effect=[{"assessment_id":9},{"result_id":8},{"assessment_id":9}])) as database:
+   self.assertEqual((await create_work(body,STUDENT))["assessment_id"],9)
+   self.assertEqual((await save_work_grade(9,Record(data={"score":82}),STUDENT))["result_id"],8)
+   await delete_work(9,STUDENT)
+   self.assertEqual(database.call_args_list[0].args[1]["p_request_key"],key)
+   self.assertEqual(database.call_args_list[1].args[0],"api_save_work_grade")
+   self.assertEqual(database.call_args_list[2].args[0],"api_delete_work")
  async def test_admin_assistant_understands_its_russian_example(self):
   admin={"token":"admin","account_id":"root","student_id":10,"role":"admin"}
   with patch("app.main.admin_read",AsyncMock(return_value={"items":[{"student_id":1}]})) as read:
