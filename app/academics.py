@@ -227,13 +227,30 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
             if scored:
                 fraction=sum(float(results[a["assessment_id"]]["score"]) for a in scored)/sum(float(a["maximum_score"]) for a in scored)
                 component_estimates[c["component_id"]]=max(lo,min(hi,lo+(hi-lo)*fraction))
+        by_parent={}
+        for c in components:by_parent.setdefault(c.get("parent_component_id"),[]).append(c)
+        def category_estimate(parent_id,seen=None):
+            seen=set() if seen is None else seen
+            if parent_id in seen:return None
+            children=by_parent.get(parent_id,[])
+            scored=[]
+            for child in children:
+                cid=child["component_id"]
+                value=category_estimate(cid,seen|{parent_id}) if by_parent.get(cid) else component_estimates.get(cid)
+                if value is not None:
+                    component_estimates[cid]=value
+                    scored.append((float(child["weight_percent"]),value))
+            weight=sum(w for w,_ in scored)
+            return sum(w*v for w,v in scored)/weight if weight else None
+        category_estimate(None)
         if components:
-            total_weight=sum(float(c["weight_percent"]) for c in components)
+            roots=by_parent.get(None,[])
+            total_weight=sum(float(c["weight_percent"]) for c in roots)
             if total_weight>100.00001:raise ValueError("Assessment weights exceed 100 percent")
             if method=="adaptive" and component_estimates:
-                observed_weight=sum(float(c["weight_percent"]) for c in components if c["component_id"] in component_estimates)
+                observed_weight=sum(float(c["weight_percent"]) for c in roots if c["component_id"] in component_estimates)
                 if observed_weight>0:
-                    observed_score=sum(float(c["weight_percent"])*component_estimates[c["component_id"]] for c in components if c["component_id"] in component_estimates)/observed_weight
+                    observed_score=sum(float(c["weight_percent"])*component_estimates[c["component_id"]] for c in roots if c["component_id"] in component_estimates)/observed_weight
                     blend=min(.35,observed_weight/100*.35)
                     estimate=(1-blend)*estimate+blend*observed_score
         exam=[]
@@ -243,7 +260,7 @@ def forecast(data, period_id, level="period", method="baseline", reference=None)
                 own_results={x["assessment_id"]:x for x in data.get("assessment_results",[]) if x.get("status")=="graded" and x.get("score") is not None}
                 graded_count=sum(a["assessment_id"] in own_results for a in own_works)
                 own_score=component_estimates.get(c["component_id"])
-                other_scores=[(float(other["weight_percent"]),score) for other in components if other["component_id"]!=c["component_id"] if (score:=component_estimates.get(other["component_id"])) is not None]
+                other_scores=[(float(other["weight_percent"]),score) for other in roots if other["component_id"]!=c["component_id"] if (score:=component_estimates.get(other["component_id"])) is not None]
                 other_mean=sum(weight*score for weight,score in other_scores)/sum(weight for weight,_ in other_scores) if other_scores and sum(weight for weight,_ in other_scores)>0 else None
                 if own_score is not None:
                     evidence=min(.8,.25+.15*graded_count)

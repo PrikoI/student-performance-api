@@ -121,6 +121,19 @@ class AcademicTests(unittest.TestCase):
   self.assertEqual(estimated["graded_works"],1)
   self.assertEqual(estimated["basis"],"graded_exam_work")
   self.assertGreater(estimated["estimated_grade"],pending.get("estimated_grade") or 0)
+ def test_adaptive_forecast_uses_nested_category_weights(self):
+  d=self.data()
+  d["assessment_components"]=[
+   {"component_id":1,"performance_id":1,"name":"Regular term","component_type":"other","weight_percent":60,"parent_component_id":None},
+   {"component_id":2,"performance_id":1,"name":"Final","component_type":"final","weight_percent":40,"parent_component_id":None},
+   {"component_id":3,"performance_id":1,"name":"Midterm","component_type":"midterm","weight_percent":50,"parent_component_id":1},
+   {"component_id":4,"performance_id":1,"name":"Endterm","component_type":"other","weight_percent":50,"parent_component_id":1},
+  ]
+  d["assessments"]=[{"assessment_id":i,"component_id":i,"maximum_score":100} for i in (2,3,4)]
+  d["assessment_results"]=[{"assessment_id":i,"status":"graded","score":score} for i,score in ((2,95),(3,70),(4,90))]
+  result=forecast(d,1,"period",method="adaptive")
+  self.assertEqual(result["subjects"][0]["exams"][0]["component_id"],2)
+  self.assertIsNotNone(result["subjects"][0]["exams"][0]["estimated_grade"])
  def test_gpa_gap_returns_none(self):
   self.assertIsNone(grade_points(70,[{"score_range":"[80,100]","grade_points":4}]))
  def data(self):

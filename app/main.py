@@ -42,7 +42,7 @@ async def guard(request:Request,call_next):
     body=await request.body()
     if len(body)>131072:return HTMLResponse("Request too large",413)
     response=await call_next(request)
-    asset_path=request.url.path in ("/logo.png","/calculator.js","/academic-results.js","/academic-entry.js") or request.url.path.startswith("/vendor/") or request.url.path.startswith("/locales/")
+    asset_path=request.url.path in ("/logo.png","/calculator.js","/academic-results.js","/academic-entry.js","/assessment-hierarchy.js") or request.url.path.startswith("/vendor/") or request.url.path.startswith("/locales/")
     response.headers["Cache-Control"]="public, max-age=604800, immutable" if asset_path else "no-store"
     response.headers["X-Content-Type-Options"]="nosniff"
     response.headers["Referrer-Policy"]="no-referrer"
@@ -202,6 +202,8 @@ def calculator_script():return FileResponse(Path(__file__).with_name("calculator
 def academic_results_script():return FileResponse(Path(__file__).with_name("academic-results.js"),media_type="text/javascript")
 @app.get("/academic-entry.js",response_class=FileResponse)
 def academic_entry_script():return FileResponse(Path(__file__).with_name("academic-entry.js"),media_type="text/javascript")
+@app.get("/assessment-hierarchy.js",response_class=FileResponse)
+def assessment_hierarchy_script():return FileResponse(Path(__file__).with_name("assessment-hierarchy.js"),media_type="text/javascript")
 
 @app.get("/locales/{language}.json",response_class=FileResponse)
 def locale_resource(language:str):
@@ -411,6 +413,17 @@ async def replace_assessment_categories(body:Record,me=Depends(identity)):
     return await rpc("replace_assessment_categories_batch",{
         "p_token":me["token"],"p_performance_id":performance_id,
         "p_categories":categories,"p_apply_all":data.get("apply_all") is True,
+    })
+@app.post("/academic/categories/hierarchy")
+async def replace_assessment_hierarchy(body:Record,me=Depends(identity)):
+    data=body.data
+    try: performance_id=int(data.get("performance_id"))
+    except (TypeError,ValueError): raise HTTPException(422,"Choose a subject")
+    nodes=data.get("nodes")
+    if not isinstance(nodes,list) or not 1<=len(nodes)<=60:
+        raise HTTPException(422,"Add 1 to 60 categories")
+    return await rpc("replace_assessment_hierarchy",{
+        "p_token":me["token"],"p_performance_id":performance_id,"p_nodes":nodes,
     })
 @app.get("/academic/personal-category-templates")
 async def personal_category_templates(me=Depends(identity)):
