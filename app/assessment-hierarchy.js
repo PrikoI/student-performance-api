@@ -5,34 +5,51 @@ function hierarchyText(key, fallback, options={}) {
 function hierarchyChildren(components,parentId) {
   return components.filter(c => (c.parent_component_id==null?null:Number(c.parent_component_id))===parentId);
 }
-function hierarchyScore(performanceId) {
+function hierarchyBreakdown(performanceId) {
   const components=rows('assessment_components').filter(c=>c.performance_id==performanceId);
   const works=rows('assessments'),results=new Map(rows('assessment_results')
     .filter(r=>r.status==='graded'&&r.score!=null).map(r=>[Number(r.assessment_id),r]));
-  let gradedWorks=0,totalWorks=0;
+  const categories=new Map();
   function score(parentId,seen=new Set()) {
     const children=hierarchyChildren(components,parentId);
-    let weighted=0,covered=0;
+    let weighted=0,covered=0,gradedWorks=0,totalWorks=0,readyChildren=0,complete=true;
     for(const c of children) {
       if(seen.has(c.component_id))continue;
       const descendants=hierarchyChildren(components,Number(c.component_id));
-      let value=null;
-      if(descendants.length)value=score(Number(c.component_id),new Set([...seen,c.component_id]));
+      let result;
+      if(descendants.length)result=score(Number(c.component_id),new Set([...seen,c.component_id]));
       else {
         const own=works.filter(w=>Number(w.component_id)===Number(c.component_id));
-        totalWorks+=own.length;
         const graded=own.filter(w=>results.has(Number(w.assessment_id))&&Number(w.maximum_score)>0);
-        gradedWorks+=graded.length;
         const maximum=graded.reduce((sum,w)=>sum+Number(w.maximum_score),0);
-        if(maximum)value=graded.reduce((sum,w)=>sum+Number(results.get(Number(w.assessment_id)).score),0)/maximum*100;
+        result={value:maximum?graded.reduce((sum,w)=>sum+Number(results.get(Number(w.assessment_id)).score),0)/maximum*100:null,
+          gradedWorks:graded.length,totalWorks:own.length,complete:own.length>0&&graded.length===own.length};
       }
-      if(value!=null){const weight=Number(c.weight_percent)||0;weighted+=value*weight;covered+=weight;}
+      categories.set(Number(c.component_id),result);
+      gradedWorks+=result.gradedWorks;totalWorks+=result.totalWorks;
+      if(result.value!=null){const weight=Number(c.weight_percent)||0;weighted+=result.value*weight;covered+=weight;readyChildren++}
+      if(!result.complete)complete=false;
     }
-    return covered?weighted/covered:null;
+    return {value:covered?weighted/covered:null,gradedWorks,totalWorks,
+      readyChildren,totalChildren:children.length,complete:complete&&children.length>0&&Math.abs(children.reduce((sum,c)=>sum+(Number(c.weight_percent)||0),0)-100)<.001};
   }
-  const value=score(null);
-  return {value,gradedWorks,totalWorks,weight:hierarchyChildren(components,null)
-    .reduce((sum,c)=>sum+(Number(c.weight_percent)||0),0)};
+  const root=score(null);
+  return {categories,root:{...root,weight:hierarchyChildren(components,null)
+    .reduce((sum,c)=>sum+(Number(c.weight_percent)||0),0)}};
+}
+function hierarchyScore(performanceId) {
+  const {root}=hierarchyBreakdown(performanceId);
+  return {value:root.value,gradedWorks:root.gradedWorks,totalWorks:root.totalWorks,weight:root.weight};
+}
+function categoryResultMarkup(componentId,breakdown) {
+  const item=breakdown?.categories.get(Number(componentId));
+  if(!item)return '';
+  const value=item.value==null?'—':`${Number(item.value.toFixed(1))}%`;
+  const status=item.value==null?hierarchyText('noResult','No grades yet'):
+    item.complete?hierarchyText('complete','Complete'):hierarchyText('partial','So far');
+  const progress=item.totalWorks?hierarchyText('workCount','{{graded}} of {{total}} graded works',
+    {graded:item.gradedWorks,total:item.totalWorks}):'';
+  return `<div class="category-result" aria-label="${esc(status)}: ${esc(value)}"><strong>${esc(value)}</strong><span>${esc(status)}${progress?' · '+esc(progress):''}</span></div>`;
 }
 calculatedSubjectGrade=hierarchyScore;
 
@@ -44,6 +61,7 @@ academicAssessmentsV2=function(){
     ?window.assessmentPerformanceId:performances[0]?.performance_id;
   window.assessmentPerformanceId=selected;
   const components=rows('assessment_components').filter(c=>c.performance_id==selected);
+  const breakdown=hierarchyBreakdown(selected);
   if(!components.some(c=>c.parent_component_id!=null)) {
     const html=previousAssessmentView();
     return selected?html.replace(
@@ -62,7 +80,7 @@ academicAssessmentsV2=function(){
         const score=r?.status==='graded'&&r.score!=null?`${r.score} / ${w.maximum_score}`:tr('academics.assessment.notGraded');
         return `<div class="work-row"><button class="assessment-item" onclick='openWorkGrade(${JSON.stringify(w)})'><b>${esc(w.title)}</b><span>${esc(score)}</span></button><button class="btn secondary" onclick='openWorkGrade(${JSON.stringify(w)})'>${esc(r?tr('academics.actions.edit'):tr('academics.assessment.addGrade'))}</button></div>`;
       }).join('');
-      return `<section class="category-card hierarchy-card" style="--depth:${Math.min(depth,5)}"><div class="category-card-head"><div><h3>${esc(c.name)}</h3><p class="sub">${esc(categoryTypeLabel(c.component_type))} · ${esc(c.weight_percent)}%</p></div>${children.length?'':`<button class="btn ghost" onclick='entityModal("assessments",{component_id:${c.component_id}})'>+ ${esc(tr('academics.assessment.addAssessment'))}</button>`}</div>${workHtml}${children.length?renderBranch(Number(c.component_id),depth+1):''}</section>`;
+      return `<section class="category-card hierarchy-card" style="--depth:${Math.min(depth,5)}"><div class="category-card-head"><div><h3>${esc(c.name)}</h3><p class="sub">${esc(categoryTypeLabel(c.component_type))} · ${esc(c.weight_percent)}%</p>${categoryResultMarkup(c.component_id,breakdown)}</div>${children.length?'':`<button class="btn ghost" onclick='entityModal("assessments",{component_id:${c.component_id}})'>+ ${esc(tr('academics.assessment.addAssessment'))}</button>`}</div>${workHtml}${children.length?renderBranch(Number(c.component_id),depth+1):''}</section>`;
     }).join('');
   }
   return `<div class="academic-intro card"><div><h2>${esc(tr('academics.assessment.title'))}</h2><p class="sub">${esc(hierarchyText('hint','Weights are calculated inside each parent category.'))}</p></div><div class="actions"><button class="btn secondary" onclick="openAttendanceEditor(${selected})">${esc(tr('academicWorkspace.workspace.editAttendance'))}</button><button class="btn" onclick="openHierarchyEditor(${selected})">${esc(hierarchyText('edit','Category tree'))}</button></div></div><div class="assessment-subject-layout"><aside class="card subject-picker">${subjectButtons}</aside><main class="card"><div class="assessment-list">${renderBranch(null)}</div></main></div>`;

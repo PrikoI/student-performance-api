@@ -8,6 +8,34 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class AssessmentHierarchyTests(unittest.TestCase):
+    def test_intermediate_result_marks_incomplete_branches(self):
+        script=r"""
+const fs=require('fs'),vm=require('vm');
+const data={assessment_components:[
+ {component_id:1,performance_id:1,parent_component_id:null,weight_percent:60},
+ {component_id:2,performance_id:1,parent_component_id:null,weight_percent:40},
+ {component_id:3,performance_id:1,parent_component_id:1,weight_percent:50},
+ {component_id:4,performance_id:1,parent_component_id:1,weight_percent:50}],
+ assessments:[{assessment_id:10,component_id:3,maximum_score:100},
+              {assessment_id:11,component_id:4,maximum_score:100},
+              {assessment_id:12,component_id:2,maximum_score:100}],
+ assessment_results:[{assessment_id:10,status:'graded',score:76}]};
+const context={rows:name=>data[name]||[],academicAssessmentsV2:()=>'',calculatedSubjectGrade:()=>null,
+ tr:(key,options)=>options?.defaultValue||key,esc:x=>String(x)};
+vm.createContext(context);vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),context);
+const b=context.hierarchyBreakdown(1);
+process.stdout.write(JSON.stringify({midterm:b.categories.get(1),empty:b.categories.get(4),root:b.root,
+ markup:context.categoryResultMarkup(1,b)}));
+"""
+        result=subprocess.run(["node","-e",script,str(ROOT / "app" / "assessment-hierarchy.js")],
+                              capture_output=True,text=True,check=True)
+        output=json.loads(result.stdout)
+        self.assertEqual(output["midterm"]["value"],76)
+        self.assertFalse(output["midterm"]["complete"])
+        self.assertEqual((output["midterm"]["gradedWorks"],output["midterm"]["totalWorks"]),(1,2))
+        self.assertIsNone(output["empty"]["value"])
+        self.assertIn("76%",output["markup"])
+
     def test_partial_nested_work_is_available_to_forecast(self):
         from app.academics import observed_assessment_percent
         data={"assessment_components":[
