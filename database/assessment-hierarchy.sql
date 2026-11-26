@@ -120,7 +120,7 @@ create or replace function private.replace_assessment_hierarchy(
 declare account public.accounts; node jsonb; node_index integer; parent_index integer;
         ids bigint[]:=array[]::bigint[]; item_id bigint; parent_id bigint;
         existing_id bigint; existing_count integer; group_total numeric;
-        depth integer[]:=array[]::integer[]; item_depth integer;
+        depth integer[]:=array[]::integer[]; item_depth integer; move_index integer;
 begin
   account:=private.api_account(p_token);
   if not exists(select 1 from public.academic_performance
@@ -185,6 +185,17 @@ begin
       returning component_id into item_id;
     end if;
     ids:=array_append(ids,item_id);
+  end loop;
+  for node_index in 0..jsonb_array_length(p_nodes)-1 loop
+    move_index:=nullif(p_nodes->node_index->>'move_to_index','')::integer;
+    if move_index is not null then
+      if move_index<=node_index or move_index>=array_length(ids,1)
+         or (p_nodes->move_index->>'parent_index')::integer<>node_index then
+        raise exception 'Choose a direct subcategory for existing work' using errcode='P0001';
+      end if;
+      update public.assessments set component_id=ids[move_index+1]
+      where component_id=ids[node_index+1] and student_id=account.student_id;
+    end if;
   end loop;
   if exists(select 1 from public.assessment_components c join public.assessments a using(component_id)
             where c.component_id=any(ids) and exists(

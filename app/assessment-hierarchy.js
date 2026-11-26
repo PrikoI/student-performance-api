@@ -73,7 +73,7 @@ function hierarchyDraftRows() {
 }
 function hierarchyEditorRow(item={},depth=0) {
   const type=item.component_type||'other';
-  return `<div class="hierarchy-edit-row" data-id="${item.component_id||''}" data-depth="${depth}" style="--depth:${depth}"><input class="input hierarchy-name" aria-label="${esc(tr('academics.fields.name'))}" maxlength="100" value="${esc(item.name||'')}"><select class="input hierarchy-type" aria-label="${esc(hierarchyText('type','Type'))}">${['assignment','quiz','midterm','final','exam','coursework','formative','section_summative','quarter_summative','other'].map(t=>`<option value="${t}" ${type===t?'selected':''}>${esc(categoryTypeLabel(t))}</option>`).join('')}</select><input class="input hierarchy-weight" aria-label="${esc(tr('academics.fields.weight'))}" type="number" min="0" max="100" step="0.01" value="${esc(item.weight_percent??'')}"><button class="btn ghost" type="button" onclick="addHierarchyChild(this)">+ ${esc(hierarchyText('child','Subcategory'))}</button><button class="icon-btn" type="button" onclick="removeHierarchyRow(this)" aria-label="${esc(tr('academics.actions.delete'))}">×</button></div>`;
+  return `<div class="hierarchy-edit-row" data-id="${item.component_id||''}" data-depth="${depth}" style="--depth:${depth}"><input class="input hierarchy-name" aria-label="${esc(tr('academics.fields.name'))}" maxlength="100" value="${esc(item.name||'')}"><select class="input hierarchy-type" aria-label="${esc(hierarchyText('type','Type'))}">${['assignment','quiz','midterm','final','exam','coursework','formative','section_summative','quarter_summative','other'].map(t=>`<option value="${t}" ${type===t?'selected':''}>${esc(categoryTypeLabel(t))}</option>`).join('')}</select><input class="input hierarchy-weight" aria-label="${esc(tr('academics.fields.weight'))}" type="number" min="0" max="100" step="0.01" value="${esc(item.weight_percent??'')}"><button class="btn ghost" type="button" onclick="addHierarchyChild(this)">+ ${esc(hierarchyText('child','Subcategory'))}</button><button class="icon-btn" type="button" onclick="removeHierarchyRow(this)" aria-label="${esc(tr('academics.actions.delete'))}">×</button><label class="hierarchy-move-wrap" hidden>${esc(hierarchyText('moveWorks','Move existing work to'))}<select class="input hierarchy-move"><option value="">—</option></select></label></div>`;
 }
 function addHierarchyChild(button) {
   const row=button.closest('.hierarchy-edit-row'),depth=Number(row.dataset.depth);
@@ -95,11 +95,19 @@ function hierarchyDraft() {
     stack[depth]=index;
     return {component_id:row.dataset.id?Number(row.dataset.id):null,
       parent_index:depth?stack[depth-1]:null,name:row.querySelector('.hierarchy-name').value.trim(),
-      type:row.querySelector('.hierarchy-type').value,weight:Number(row.querySelector('.hierarchy-weight').value)};
+      type:row.querySelector('.hierarchy-type').value,weight:Number(row.querySelector('.hierarchy-weight').value),
+      move_to_index:row.querySelector('.hierarchy-move')?.value===''?null:Number(row.querySelector('.hierarchy-move')?.value)};
   });
 }
 function updateHierarchyTotals() {
-  const nodes=hierarchyDraft(),groups=new Map();
+  const nodes=hierarchyDraft(),groups=new Map(),editorRows=hierarchyDraftRows();
+  editorRows.forEach((row,index)=>{
+    const id=Number(row.dataset.id),children=nodes.map((n,i)=>({...n,index:i})).filter(n=>n.parent_index===index);
+    const hasWorks=id>0&&rows('assessments').some(work=>Number(work.component_id)===id);
+    const wrap=row.querySelector('.hierarchy-move-wrap'),select=wrap.querySelector('select'),previous=select.value;
+    wrap.hidden=!(hasWorks&&children.length);
+    if(!wrap.hidden){select.innerHTML=`<option value="">—</option>`+children.map(c=>`<option value="${c.index}">${esc(c.name||hierarchyText('child','Subcategory'))}</option>`).join('');select.value=children.some(c=>String(c.index)===previous)?previous:''}
+  });
   nodes.forEach(n=>{const key=n.parent_index??-1;groups.set(key,(groups.get(key)||0)+n.weight)});
   const invalid=[...groups.values()].some(total=>!Number.isFinite(total)||Math.abs(total-100)>.001);
   const status=$('#hierarchyTotal');
@@ -119,6 +127,9 @@ function openHierarchyEditor(performanceId) {
 }
 async function saveHierarchy(performanceId) {
   const nodes=hierarchyDraft(),msg=$('#modalMsg'),button=$('#modal .btn.wide');
+  if(nodes.some((n,i)=>hierarchyDraftRows()[i].querySelector('.hierarchy-move-wrap')?.hidden===false&&n.move_to_index==null)){
+    msg.textContent=hierarchyText('moveError','Choose a subcategory for existing work.');return;
+  }
   if(!nodes.length||nodes.some(n=>!n.name||!Number.isFinite(n.weight)||n.weight<0||n.weight>100)||!updateHierarchyTotals()){
     msg.textContent=hierarchyText('weightError','Each level must add up to 100%.');return;
   }
