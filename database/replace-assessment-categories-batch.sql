@@ -73,7 +73,7 @@ end $$;
 
 create or replace function public.replace_assessment_categories_batch(
   p_token text, p_performance_id bigint, p_categories jsonb, p_apply_all boolean
-) returns jsonb language sql security invoker set search_path='' as $$
+) returns jsonb language sql security definer set search_path='' as $$
   select private.replace_assessment_categories_batch(p_token,p_performance_id,p_categories,p_apply_all)
 $$;
 revoke all on function private.replace_assessment_categories_batch(text,bigint,jsonb,boolean)

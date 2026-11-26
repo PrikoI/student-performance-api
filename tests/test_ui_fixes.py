@@ -10,6 +10,12 @@ RESULTS = (ROOT / "app" / "academic-results.js").read_text(encoding="utf-8")
 
 
 class RecentUiFixTests(unittest.TestCase):
+    def test_category_rpc_wrapper_can_call_private_function(self):
+        sql = (ROOT / "database" / "replace-assessment-categories-batch.sql").read_text(encoding="utf-8")
+        wrapper = sql.split("create or replace function public.replace_assessment_categories_batch", 1)[1]
+        self.assertIn("security definer set search_path=''", wrapper)
+        self.assertIn("grant execute on function public.replace_assessment_categories_batch", wrapper)
+
     def test_switching_period_does_not_force_results_tab(self):
         self.assertIn('onclick="switchAcademicPeriod(${period.period_id})"', HTML)
         self.assertNotIn("switchAcademicPeriod(${period.period_id});window.academicTab='records'", HTML)
