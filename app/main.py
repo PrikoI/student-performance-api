@@ -194,7 +194,11 @@ class Avatar(Strict):
 def health():return {"status":"ok","version":"1.0.0"}
 
 @app.get("/",response_class=HTMLResponse)
-def application_page():return Path(__file__).with_name("app.html").read_text(encoding="utf-8")
+def application_page():
+    html=Path(__file__).with_name("app.html").read_text(encoding="utf-8")
+    locale_files=sorted(Path(__file__).with_name("locales").glob("*.json"))
+    version=hashlib.sha256(b"".join(path.read_bytes() for path in locale_files)).hexdigest()[:12]
+    return html.replace("const LOCALE_ASSET_VERSION='2026-11-26-4';",f"const LOCALE_ASSET_VERSION='{version}';")
 @app.head("/")
 def application_head():return HTMLResponse("")
 @app.get("/logo.png",response_class=FileResponse)
