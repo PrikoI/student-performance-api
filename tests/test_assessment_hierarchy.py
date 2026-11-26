@@ -26,6 +26,20 @@ process.stdout.write(String(weighted([
         result=subprocess.run(["node","-e",script],capture_output=True,text=True,check=True)
         self.assertAlmostEqual(float(result.stdout),(90*5+80*2)/7)
 
+    def test_dashboard_finds_grade_band_from_postgres_range(self):
+        import re
+        html=(ROOT / "app" / "app.html").read_text(encoding="utf-8")
+        source=re.search(r"function profileBand\(percent,[^\n]+",html).group(0)
+        script=f"""
+const rows=name=>name==='academic_settings'?[{{settings_id:1,scale_id:4}}]:
+ name==='grading_bands'?[{{scale_id:4,score_range:'[80,85)',letter_grade:'B'}}]:[];
+const displayPeriod=()=>({{settings_id:1}});
+{source}
+process.stdout.write(profileBand(84)?.letter_grade||'none');
+"""
+        result=subprocess.run(["node","-e",script],capture_output=True,text=True,check=True)
+        self.assertEqual(result.stdout,"B")
+
     def test_intermediate_result_marks_incomplete_branches(self):
         script=r"""
 const fs=require('fs'),vm=require('vm');
